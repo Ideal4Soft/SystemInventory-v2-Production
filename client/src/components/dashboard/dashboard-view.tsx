@@ -181,7 +181,7 @@ export default function DashboardView() {
           
           {/* Quick Statistics - With correct account display */}
           <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-100">
-            <h3 className="text-md font-bold mb-3 text-gray-700 border-b pb-2">إحصائيات سريعة</h3>
+            <h3 className="text-md font-bold mb-3 text-gray-700 border-b pb-2">جداإحصائيات سريعة</h3>
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center p-3 bg-blue-50 rounded-lg">
                 <div className="flex justify-center mb-2">
@@ -363,7 +363,7 @@ export default function DashboardView() {
           
           {/* Statistics Section */}
           <div className="mb-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-3">إحصائيات سريعة</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-3">إحصائيات سريعةجدا </h3>
             <div className="bg-white rounded-lg shadow-sm p-4">
               <div className="flex justify-between items-center mb-4">
                 <span className="text-sm font-medium text-gray-700">المبيعات اليوم</span>
