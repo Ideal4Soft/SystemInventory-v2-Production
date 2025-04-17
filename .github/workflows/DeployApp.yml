@@ -23,4 +23,4 @@ jobs:
    # - run: npm install -f
     - name: Restart Application To Apply Changes
       run: |
-        sudo pm2 restart Sahl-Sales-App
+        sudo pm2 restart 0
