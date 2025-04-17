@@ -1,4 +1,4 @@
-name: Node.js Build and Deploy
+name: NodeJs Deploy
 
 on:
   push:
@@ -7,45 +7,19 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-deploy:
+  build:
+
     runs-on: self-hosted
     strategy:
       matrix:
-        node-version: [20.x]  # Recommended to upgrade from Node 16 (EOL)
-    
-    env:
-      DEPLOY_DIR: /home/dream4soft-salesapp/htdocs/salesapp.dream4soft.co.uk
-    
+        node-version: [ 20 ]
+        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Setup Node.js ${{ matrix.node-version }}
+    - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'  # Adds caching for faster builds
-    
-    - name: Install dependencies
-      run: npm ci     # More reliable than npm install for CI
-      env:
-        NODE_ENV: production
-    
-    - name: Build project
-      run: npm run build
-    
-    - name: Verify build output
-      run: |
-        if [ ! -d "./dist" ]; then
-          echo "❌ Error: dist directory not found after build!"
-          exit 1
-        fi
-    
-    - name: Prepare deployment directory
-      run: |
-        mkdir -p $DEPLOY_DIR
-        chmod -R 755 $DEPLOY_DIR
-    
-    - name: Deploy to production
-      run: |
-        rsync -avh --delete ./dist/ $DEPLOY_DIR/
-        echo "Deployment completed successfully!"
+    - run: npm install -f
+    - run: npm run build
+    - run: cp -r ./dist/* /home/dream4soft-salesapp/htdocs/salesapp.dream4soft.co.uk
