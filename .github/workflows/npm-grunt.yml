@@ -1,4 +1,4 @@
-name: NodeJS with Grunt
+name: .NET
 
 on:
   push:
@@ -8,21 +8,19 @@ on:
 
 jobs:
   build:
+
     runs-on: self-hosted
 
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
-
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
       with:
-        node-version: ${{ matrix.node-version }}
-
+        dotnet-version: 9.0.x
+    - name: Restore dependencies
+      run: DOTNET_CLI_HOME=/tmp dotnet restore "Salony.Wasm/Salony.Wasm.csproj"
     - name: Build
-      run: |
-        npm install
-        grunt
+      run: DOTNET_CLI_HOME=/tmp dotnet build "Salony.Wasm/Salony.Wasm.csproj" --no-restore
+    - name: Publish Project
+      run: DOTNET_CLI_HOME=/tmp dotnet publish "Salony.Wasm/Salony.Wasm.csproj" -c Release  -o /home/ahmedkamal-salony/htdocs/salony.ahmedkamal.online
+      
