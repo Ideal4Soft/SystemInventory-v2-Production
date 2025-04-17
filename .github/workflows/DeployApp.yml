@@ -21,5 +21,6 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
     - run: npm install -f
-    - run: |
+    - name: Restart Application To Apply Changes
+      run: |
         sudo pm2 restart Sahl-Sales-App
