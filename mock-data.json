@@ -1,0 +1,175 @@
+{
+  "products": [
+    {
+      "id": 1,
+      "name": "سكر",
+      "code": "SKR001",
+      "barcode": "123456789",
+      "categoryId": 1,
+      "costPrice": 20.5,
+      "sellPrice1": 25,
+      "sellPrice2": 24,
+      "sellPrice3": 23,
+      "sellPrice4": 22,
+      "unit": "kg",
+      "description": "سكر أبيض ناعم",
+      "minStock": 10,
+      "isActive": true
+    },
+    {
+      "id": 2,
+      "name": "أرز",
+      "code": "RZ002",
+      "barcode": "234567890",
+      "categoryId": 1,
+      "costPrice": 15.75,
+      "sellPrice1": 18.5,
+      "sellPrice2": 18,
+      "sellPrice3": 17.5,
+      "sellPrice4": 17,
+      "unit": "kg",
+      "description": "أرز بسمتي",
+      "minStock": 15,
+      "isActive": true
+    },
+    {
+      "id": 3,
+      "name": "زيت",
+      "code": "ZT003",
+      "barcode": "345678901",
+      "categoryId": 2,
+      "costPrice": 35,
+      "sellPrice1": 40,
+      "sellPrice2": 39,
+      "sellPrice3": 38,
+      "sellPrice4": 37,
+      "unit": "liter",
+      "description": "زيت زيتون",
+      "minStock": 5,
+      "isActive": true
+    },
+    {
+      "name": "سكر ابيض مشتراه من شركة السكر تحميل مصنع النوباريه",
+      "code": "265752",
+      "costPrice": 25,
+      "sellPrice1": 30,
+      "categoryId": 1,
+      "isActive": true,
+      "id": 4
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "مواد غذائية",
+      "description": "مواد غذائية أساسية"
+    },
+    {
+      "id": 2,
+      "name": "زيوت وسمن",
+      "description": "زيوت وسمنة وشحوم"
+    }
+  ],
+  "warehouses": [
+    {
+      "id": 1,
+      "name": "المخزن الرئيسي",
+      "location": "القاهرة",
+      "isDefault": true,
+      "isActive": true
+    },
+    {
+      "id": 2,
+      "name": "مخزن الفرع",
+      "location": "الإسكندرية",
+      "isDefault": false,
+      "isActive": true
+    }
+  ],
+  "inventory": [
+    {
+      "id": 1,
+      "productId": 1,
+      "warehouseId": 1,
+      "quantity": 150
+    },
+    {
+      "id": 2,
+      "productId": 2,
+      "warehouseId": 1,
+      "quantity": 200
+    },
+    {
+      "id": 3,
+      "productId": 3,
+      "warehouseId": 1,
+      "quantity": 100
+    }
+  ],
+  "invoices": [],
+  "accounts": [
+    {
+      "id": 100,
+      "name": "النقدية",
+      "type": "asset",
+      "accountGroup": "assets",
+      "accountNumber": "1001",
+      "isSystem": true,
+      "currentBalance": 0
+    },
+    {
+      "id": 101,
+      "name": "البنك",
+      "type": "asset",
+      "accountGroup": "assets",
+      "accountNumber": "1002",
+      "isSystem": true,
+      "currentBalance": 0
+    },
+    {
+      "id": 102,
+      "name": "المخزون",
+      "type": "asset",
+      "accountGroup": "assets",
+      "accountNumber": "1003",
+      "isSystem": true,
+      "currentBalance": 0
+    },
+    {
+      "id": 200,
+      "name": "حسابات الموردين",
+      "type": "liability",
+      "accountGroup": "liabilities",
+      "accountNumber": "2001",
+      "isSystem": true,
+      "currentBalance": 0
+    },
+    {
+      "id": 400,
+      "name": "المبيعات",
+      "type": "revenue",
+      "accountGroup": "revenue",
+      "accountNumber": "4001",
+      "isSystem": true,
+      "currentBalance": 0
+    },
+    {
+      "id": 500,
+      "name": "تكلفة البضاعة المباعة",
+      "type": "expense",
+      "accountGroup": "expenses",
+      "accountNumber": "5001",
+      "isSystem": true,
+      "currentBalance": 0
+    },
+    {
+      "id": 501,
+      "name": "المشتريات",
+      "type": "expense",
+      "accountGroup": "expenses",
+      "accountNumber": "5002",
+      "isSystem": true,
+      "currentBalance": 0
+    }
+  ]
+}

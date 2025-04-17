@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "combine_purchase_views" boolean DEFAULT true; 

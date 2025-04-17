@@ -1,0 +1,31 @@
+{
+  "id": "ca817f97-3ee5-4cd7-a2fc-c8f4ae878606",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "settings": {
+      "name": "settings",
+      "schema": "",
+      "columns": {
+        "combine_purchase_views": {
+          "name": "combine_purchase_views",
+          "type": "boolean",
+          "default": "true",
+          "nullable": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+} 

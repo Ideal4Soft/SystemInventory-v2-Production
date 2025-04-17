@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1744244632446,
+      "tag": "0000_purple_jackal",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1744573800000,
+      "tag": "0002_add_combine_purchases_setting",
+      "breakpoints": true
+    }
+  ]
+}
