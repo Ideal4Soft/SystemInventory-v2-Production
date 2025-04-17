@@ -108,7 +108,7 @@ export default function AccountDetailsDialog({ isOpen, onClose, account, initial
       
       // Sort transactions from newest to oldest
       if (result && result.transactions) {
-        result.transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        result.transactions.sort((a: { date: string }, b: { date: string }) => new Date(b.date).getTime() - new Date(a.date).getTime());
       }
       
       return result;
@@ -128,7 +128,7 @@ export default function AccountDetailsDialog({ isOpen, onClose, account, initial
       const result = await apiRequest(`/api/invoices?accountId=${account.id}`, 'GET');
       
       // Sort invoices from newest to oldest
-      return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return result.sort((a: { date: string }, b: { date: string }) => new Date(b.date).getTime() - new Date(a.date).getTime());
     },
     enabled: !!account?.id && isOpen && activeTab === "invoices",
   });
@@ -145,7 +145,7 @@ export default function AccountDetailsDialog({ isOpen, onClose, account, initial
       const result = await apiRequest(`/api/purchases?accountId=${account.id}`, 'GET');
       
       // Sort purchases from newest to oldest
-      return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return result.sort((a: { date: string }, b: { date: string }) => new Date(b.date).getTime() - new Date(a.date).getTime());
     },
     enabled: !!account?.id && isOpen && activeTab === "purchases",
   });
@@ -162,7 +162,7 @@ export default function AccountDetailsDialog({ isOpen, onClose, account, initial
       const result = await apiRequest(`/api/transactions?accountId=${account.id}`, 'GET');
       
       // Sort transactions from newest to oldest
-      return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return result.sort((a: { date: string }, b: { date: string }) => new Date(b.date).getTime() - new Date(a.date).getTime());
     },
     enabled: !!account?.id && isOpen && activeTab === "transactions",
   });
@@ -192,11 +192,46 @@ export default function AccountDetailsDialog({ isOpen, onClose, account, initial
   // Handle quick transaction submit
   const onSubmitTransaction = async (values: TransactionFormValues) => {
     try {
-      await apiRequest('/api/transactions', 'POST', values);
+      // Log for debugging
+      console.log('Transaction values before submit:', values);
+      
+      // Basic validation to prevent common errors
+      if (!values.amount || values.amount <= 0) {
+        toast({
+          title: "خطأ في المبلغ",
+          description: "يجب إدخال مبلغ أكبر من صفر",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      if (!values.accountId) {
+        toast({
+          title: "خطأ في الحساب",
+          description: "يجب اختيار حساب صحيح",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Ensure amount is a number
+      const validatedValues = {
+        ...values,
+        amount: Number(values.amount),
+        accountId: Number(values.accountId)
+      };
+      
+      console.log('Sending transaction data:', validatedValues);
+      
+      // Make API request with proper error handling
+      const response = await apiRequest('/api/transactions', 'POST', validatedValues);
+      console.log('Transaction creation response:', response);
+      
       toast({
         title: "تم إنشاء المعاملة بنجاح",
         description: `تم ${values.type === 'credit' ? 'استلام' : 'دفع'} مبلغ ${values.amount} ج.م`,
       });
+      
       setIsTransactionFormOpen(false);
       
       // Refresh data
@@ -205,9 +240,18 @@ export default function AccountDetailsDialog({ isOpen, onClose, account, initial
       queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
     } catch (error) {
+      console.error("Transaction creation error:", error);
+      
+      // More descriptive error message based on the error
+      let errorMessage = "حدث خطأ أثناء إنشاء المعاملة";
+      
+      if (error instanceof Error) {
+        errorMessage += `: ${error.message}`;
+      }
+      
       toast({
         title: "خطأ",
-        description: "حدث خطأ أثناء إنشاء المعاملة",
+        description: errorMessage,
         variant: "destructive",
       });
     }

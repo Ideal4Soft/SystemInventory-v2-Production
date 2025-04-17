@@ -327,10 +327,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/accounts", async (req, res) => {
     try {
-      console.log('GET /api/accounts endpoint called');
+      // console.log('GET /api/accounts endpoint called');
       
       if (dbUsingMockData) {
-        console.log('Using mockDB for GET /api/accounts');
+        // console.log('Using mockDB for GET /api/accounts');
         const { type, showNonZeroOnly, showActiveOnly } = req.query;
         let accounts = mockDB.getAccounts();
         
@@ -349,7 +349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           accounts = accounts.filter(a => a.isActive !== false);
         }
         
-        console.log(`Retrieved ${accounts.length} accounts from mockDB:`, accounts);
+        // console.log(`Retrieved ${accounts.length} accounts from mockDB:`, accounts);
         
         // Force browser to reload data by preventing 304 response
         res.set({
@@ -369,7 +369,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         showNonZeroOnly === 'true',
         showActiveOnly === 'true'
       );
-      console.log(`Retrieved ${accounts.length} accounts from database`);
+      // console.log(`Retrieved ${accounts.length} accounts from database`);
       
       // Force browser to reload data
       res.set({
@@ -1325,9 +1325,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Validate amount
       const parsedAmount = parseFloat(String(amount));
-      if (isNaN(parsedAmount)) {
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
         console.log('[DEBUG] Invalid amount:', amount);
-        return res.status(400).json({ message: "Invalid amount" });
+        return res.status(400).json({ message: "Invalid amount - must be greater than zero" });
+      }
+      
+      // Validate date format if provided
+      let parsedDate = new Date();
+      if (date) {
+        try {
+          parsedDate = new Date(date);
+          if (isNaN(parsedDate.getTime())) {
+            console.log('[DEBUG] Invalid date format:', date);
+            return res.status(400).json({ message: "Invalid date format" });
+          }
+        } catch (e) {
+          console.log('[DEBUG] Error parsing date:', date, e);
+          return res.status(400).json({ message: "Invalid date format" });
+        }
+      }
+      
+      // Validate transaction type
+      if (!['credit', 'debit', 'journal'].includes(type)) {
+        console.log('[DEBUG] Invalid transaction type:', type);
+        return res.status(400).json({ message: "Transaction type must be 'credit', 'debit' or 'journal'" });
+      }
+      
+      // Validate payment method
+      const validPaymentMethods = ['cash', 'bank', 'check', 'card'];
+      const parsedPaymentMethod = paymentMethod || 'cash';
+      if (!validPaymentMethods.includes(parsedPaymentMethod)) {
+        console.log('[DEBUG] Invalid payment method:', parsedPaymentMethod);
+        return res.status(400).json({ message: "Invalid payment method" });
       }
       
       console.log('[DEBUG] Using mock data:', dbUsingMockData);
@@ -1341,9 +1370,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             type,
             accountId: parsedAccountId,
             amount: parsedAmount,
-            date: date ? new Date(date) : new Date(),
+            date: parsedDate,
             notes: notes || "",
-            paymentMethod: paymentMethod || "cash",
+            paymentMethod: parsedPaymentMethod,
             reference: reference || ""
           });
           
@@ -1357,79 +1386,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // reduce customer balance, if debit (دفع/Pay to supplier), 
             // increase supplier balance
             if (type === "credit") {
-              // Credit transactions reduce customer balance (they paid us)
-              newBalance = currentBalance - parsedAmount;
-              
-              // Create accounting entry - Customer payment
-              // من ح/ النقدية
-              // إلى ح/ العميل
-              
-              // Cash increase entry
-              createMockTransaction({
-                type: "journal",
-                accountId: 1, // Cash/Bank account ID (النقدية)
-                amount: parsedAmount,
-                date: date ? new Date(date) : new Date(),
-                notes: "استلام دفعة من العميل",
-                reference: reference || "دفعة نقدية",
-                paymentMethod: paymentMethod || "cash",
-                isDebit: true // مدين (Debit entry for cash increase)
-              });
-              
-              // Customer account decrease entry
-              createMockTransaction({
-                type: "journal",
-                accountId: parsedAccountId, // Customer account
-                amount: parsedAmount,
-                date: date ? new Date(date) : new Date(),
-                notes: "تسديد رصيد",
-                reference: reference || "دفعة نقدية",
-                paymentMethod: paymentMethod || "cash",
-                isDebit: false // دائن (Credit entry for customer account decrease)
-              });
-              
+              // Customer paying us, reduce their debt or increase our debt to them
+              if (account.type === "customer") {
+                newBalance -= parsedAmount;
+              } else if (account.type === "supplier") {
+                newBalance += parsedAmount;
+              }
             } else if (type === "debit") {
-              // Debit transactions increase customer balance (we paid them)
-              newBalance = currentBalance + parsedAmount;
-              
-              // Create accounting entry - Supplier payment
-              // من ح/ المورد
-              // إلى ح/ النقدية
-              
-              // Supplier account decrease entry
-              createMockTransaction({
-                type: "journal",
-                accountId: parsedAccountId, // Supplier account
-                amount: parsedAmount,
-                date: date ? new Date(date) : new Date(),
-                notes: "دفع مستحقات للمورد",
-                reference: reference || "دفعة نقدية",
-                paymentMethod: paymentMethod || "cash",
-                isDebit: true // مدين (Debit entry for supplier account decrease)
-              });
-              
-              // Cash decrease entry
-              createMockTransaction({
-                type: "journal",
-                accountId: 1, // Cash/Bank account ID (النقدية)
-                amount: parsedAmount,
-                date: date ? new Date(date) : new Date(),
-                notes: "دفع مستحقات",
-                reference: reference || "دفعة نقدية",
-                paymentMethod: paymentMethod || "cash",
-                isDebit: false // دائن (Credit entry for cash decrease)
-              });
+              // We're paying customer, increase customer debt or decrease our debt
+              if (account.type === "customer") {
+                newBalance += parsedAmount;
+              } else if (account.type === "supplier") {
+                newBalance -= parsedAmount;
+              }
             }
             
-            // Update the account balance
-            mockDB.updateAccount(parsedAccountId, {
-              currentBalance: newBalance
-            });
-            
-            console.log(`Updated account balance from ${currentBalance} to ${newBalance}`);
+            // Update mock account balance
+            mockDB.updateAccount(parsedAccountId, { ...account, currentBalance: newBalance });
           }
           
-          console.log('[DEBUG] Created mock transaction:', newTransaction);
+          console.log("[DEBUG] Mock transaction created successfully:", newTransaction);
           return res.status(201).json(newTransaction);
         } catch (mockError) {
           console.error('[DEBUG] Error creating mock transaction:', mockError);
@@ -1443,9 +1419,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           type,
           accountId: parsedAccountId,
           amount: parsedAmount,
-          date: date ? new Date(date) : new Date(), // Ensure date is a Date object
+          date: parsedDate,
           notes: notes || "",
-          paymentMethod: paymentMethod || "cash",
+          paymentMethod: parsedPaymentMethod,
           reference: reference || ""
         });
         
@@ -1457,7 +1433,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       console.error("[DEBUG] Error creating transaction:", error);
-        res.status(500).json({ message: "Error creating transaction" });
+      res.status(500).json({ 
+        message: "Error creating transaction", 
+        error: error instanceof Error ? error.message : "Unknown error" 
+      });
     }
   });
 
@@ -2832,12 +2811,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Add a simple stats endpoint
   app.get("/api/stats", async (req, res) => {
     try {
-      // Set cache control headers
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
+      // Set cache control headers to enable caching for 30 seconds
+      // This will reduce the number of calls made to this endpoint
+      res.setHeader('Cache-Control', 'public, max-age=30');
+      res.setHeader('Expires', new Date(Date.now() + 30000).toUTCString());
       
-      console.log('[DEBUG] GET /api/stats called');
+      // Reduce logging - only log occasionally for debugging
+      // console.log('[DEBUG] GET /api/stats called');
       
       if (dbUsingMockData) {
         // Return mock stats
@@ -2848,6 +2828,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalSuppliers: 5,
           totalProducts: 25,
           totalCategories: 5,
+          customersWithDebit: 7,
+          customersWithCredit: 2,
+          totalCustomersDebit: 42500.00,
+          totalCustomersCredit: 7800.00,
           lowStockItems: 3,
           recentTransactions: 12,
           lastUpdated: new Date().toISOString()
@@ -2860,13 +2844,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // This is just a placeholder implementation
       const totalProducts = await storage.countProducts();
       const totalCategories = await storage.countCategories();
+      const totalCustomers = await storage.countCustomers();
+      const totalSuppliers = await storage.countSuppliers();
+      const customersWithDebit = await storage.countCustomersWithDebit();
+      const customersWithCredit = await storage.countCustomersWithCredit();
+      const totalCustomersDebit = await storage.getTotalCustomersDebit();
+      const totalCustomersCredit = await storage.getTotalCustomersCredit();
+      
       const stats = {
         totalSales: 0, // Would calculate from actual invoices
         totalPurchases: 0, // Would calculate from actual purchases
-        totalCustomers: 0, // Would count customers
-        totalSuppliers: 0, // Would count suppliers
+        totalCustomers: totalCustomers || 0,
+        totalSuppliers: totalSuppliers || 0,
         totalProducts: totalProducts || 0,
         totalCategories: totalCategories || 0,
+        customersWithDebit: customersWithDebit || 0,
+        customersWithCredit: customersWithCredit || 0,
+        totalCustomersDebit: totalCustomersDebit || 0,
+        totalCustomersCredit: totalCustomersCredit || 0,
         lowStockItems: 0, // Would count products below minStock
         recentTransactions: 0, // Would count recent transactions
         lastUpdated: new Date().toISOString()

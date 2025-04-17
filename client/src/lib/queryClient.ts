@@ -42,6 +42,8 @@ export async function apiRequest(
       "Cache-Control": "no-cache"
     };
     
+    console.log(`API Request: ${method} ${fullUrl}`, data);
+    
     const res = await fetch(fullUrl, {
       method,
       headers,
@@ -55,14 +57,41 @@ export async function apiRequest(
       throw new Error(`API Error: Received HTML response instead of JSON`);
     }
     
-    await throwIfResNotOk(res);
+    // Check for server error responses and handle appropriately
+    if (!res.ok) {
+      // Try to parse error message from response
+      try {
+        const errorData = await res.json();
+        throw new Error(errorData.message || `Server responded with status: ${res.status}`);
+      } catch (parseError) {
+        // If we can't parse the error response, throw a generic error
+        throw new Error(`API Error: ${res.status} ${res.statusText}`);
+      }
+    }
+    
     if (res.status === 204) {
       // No content
       return null;
     }
     
-    return await res.json();
+    // Parse response
+    const responseText = await res.text();
+    
+    // Handle empty responses
+    if (!responseText.trim()) {
+      console.warn('Empty response from server');
+      return null;
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('Failed to parse response:', responseText);
+      throw new Error('Invalid JSON response from server');
+    }
   } catch (error) {
+    console.error(`API Request Error: ${method} ${url}`, error);
+    
     if (retries > 0 && (
       error instanceof TypeError || // Network error
       (error instanceof Error && error.message.startsWith('5')) // 5xx error
@@ -134,7 +163,6 @@ export const queryClient = new QueryClient({
       networkMode: 'always',
       gcTime: 0, // Disable garbage collection
       refetchOnMount: true,
-      cacheTime: 0
     },
     mutations: {
       retry: 1,

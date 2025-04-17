@@ -15,7 +15,7 @@ import {
   purchases, purchaseDetails, users, settings
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, inArray, like, desc, gte, lte, SQL, sql, count, not, lt, or, isNull } from "drizzle-orm";
+import { eq, and, inArray, like, desc, gte, lte, SQL, sql, count, not, lt, or, isNull, gt } from "drizzle-orm";
 
 // interface defining all operations for our storage
 export interface IStorage {
@@ -43,6 +43,8 @@ export interface IStorage {
   updateCategory(id: number, category: Partial<InsertCategory>): Promise<Category | undefined>;
   deleteCategory(id: number): Promise<boolean>;
   countCategories(): Promise<number>;
+  countCustomers(): Promise<number>;
+  countSuppliers(): Promise<number>;
 
   // Products
   createProduct(product: InsertProduct): Promise<Product>;
@@ -96,6 +98,11 @@ export interface IStorage {
 
   // New method
   updateInvoice(id: number, invoice: Partial<InsertInvoice>, details?: any[]): Promise<Invoice | undefined>;
+
+  countCustomersWithDebit(): Promise<number>;
+  countCustomersWithCredit(): Promise<number>;
+  getTotalCustomersDebit(): Promise<number>;
+  getTotalCustomersCredit(): Promise<number>;
 }
 
 // Define the statement item type
@@ -206,7 +213,8 @@ export class DatabaseStorage implements IStorage {
       account.currentBalance = balance;
     }
     
-    // طباعة الحسابات مع أرصدتها المحسوبة ديناميكياً للتأكد من صحة الحساب
+    // Reduce console logging - comment out noisy debug messages
+    /*
     console.log("Accounts sent to frontend with dynamically calculated balances:", 
       accountList.map(a => ({
         id: a.id,
@@ -215,6 +223,7 @@ export class DatabaseStorage implements IStorage {
         currentBalance: a.currentBalance
       }))
     );
+    */
     
     return accountList;
   }
@@ -1797,6 +1806,102 @@ export class DatabaseStorage implements IStorage {
       return result[0].count;
     } catch (error) {
       console.error("Error counting categories:", error);
+      return 0;
+    }
+  }
+  
+  async countCustomers(): Promise<number> {
+    try {
+      const result = await db
+        .select({ count: count() })
+        .from(accounts)
+        .where(eq(accounts.type, 'customer'));
+      return result[0].count;
+    } catch (error) {
+      console.error("Error counting customers:", error);
+      return 0;
+    }
+  }
+
+  async countSuppliers(): Promise<number> {
+    try {
+      const result = await db
+        .select({ count: count() })
+        .from(accounts)
+        .where(eq(accounts.type, 'supplier'));
+      return result[0].count;
+    } catch (error) {
+      console.error("Error counting suppliers:", error);
+      return 0;
+    }
+  }
+
+  async countCustomersWithDebit(): Promise<number> {
+    try {
+      // Count customers with positive balance (they owe us money)
+      const result = await db
+        .select({ count: count() })
+        .from(accounts)
+        .where(
+          and(
+            eq(accounts.type, 'customer'),
+            gt(accounts.currentBalance, 0)
+          )
+        );
+      return result[0].count;
+    } catch (error) {
+      console.error("Error counting customers with debit:", error);
+      return 0;
+    }
+  }
+
+  async countCustomersWithCredit(): Promise<number> {
+    try {
+      // Count customers with negative balance (we owe them money)
+      const result = await db
+        .select({ count: count() })
+        .from(accounts)
+        .where(
+          and(
+            eq(accounts.type, 'customer'),
+            lt(accounts.currentBalance, 0)
+          )
+        );
+      return result[0].count;
+    } catch (error) {
+      console.error("Error counting customers with credit:", error);
+      return 0;
+    }
+  }
+
+  async getTotalCustomersDebit(): Promise<number> {
+    try {
+      // Sum of all positive customer balances
+      const result = await db
+        .select({
+          total: sql`COALESCE(SUM(CASE WHEN ${accounts.currentBalance} > 0 THEN ${accounts.currentBalance} ELSE 0 END), 0)`
+        })
+        .from(accounts)
+        .where(eq(accounts.type, 'customer'));
+      return result[0].total;
+    } catch (error) {
+      console.error("Error calculating total customer debit:", error);
+      return 0;
+    }
+  }
+
+  async getTotalCustomersCredit(): Promise<number> {
+    try {
+      // Sum of all negative customer balances (absolute value)
+      const result = await db
+        .select({
+          total: sql`COALESCE(SUM(CASE WHEN ${accounts.currentBalance} < 0 THEN ABS(${accounts.currentBalance}) ELSE 0 END), 0)`
+        })
+        .from(accounts)
+        .where(eq(accounts.type, 'customer'));
+      return result[0].total;
+    } catch (error) {
+      console.error("Error calculating total customer credit:", error);
       return 0;
     }
   }

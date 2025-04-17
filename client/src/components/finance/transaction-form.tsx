@@ -102,14 +102,35 @@ export function TransactionForm({ isOpen, onClose, transaction, accounts }: Tran
   const onSubmit = async (data: TransactionFormValues) => {
     setIsSubmitting(true);
     try {
+      // Log data for debugging
+      console.log("Submitting transaction data:", data);
+      
+      // Perform basic validation
+      if (!data.accountId || isNaN(Number(data.accountId))) {
+        throw new Error("الحساب غير صالح");
+      }
+      
+      if (!data.amount || data.amount <= 0 || isNaN(Number(data.amount))) {
+        throw new Error("المبلغ غير صالح - يجب أن يكون أكبر من صفر");
+      }
+      
+      // Ensure numeric values are properly formatted
+      const formattedData = {
+        ...data,
+        accountId: Number(data.accountId),
+        amount: Number(data.amount)
+      };
+      
       if (transaction) {
-        await apiRequest(`/api/transactions/${transaction.id}`, "PATCH", data);
+        await apiRequest(`/api/transactions/${transaction.id}`, "PATCH", formattedData);
         toast({
           title: "تم التحديث بنجاح",
           description: "تم تحديث المعاملة المالية بنجاح",
         });
       } else {
-        await apiRequest("/api/transactions", "POST", data);
+        const response = await apiRequest("/api/transactions", "POST", formattedData);
+        console.log("Transaction created successfully:", response);
+        
         toast({
           title: "تم الإنشاء بنجاح",
           description: "تم إنشاء المعاملة المالية بنجاح",
@@ -119,9 +140,17 @@ export function TransactionForm({ isOpen, onClose, transaction, accounts }: Tran
       onClose();
     } catch (error) {
       console.error("Error saving transaction:", error);
+      
+      // Provide more specific error message
+      let errorMessage = "حدث خطأ أثناء حفظ المعاملة المالية";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "خطأ في الحفظ",
-        description: "حدث خطأ أثناء حفظ المعاملة المالية",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
