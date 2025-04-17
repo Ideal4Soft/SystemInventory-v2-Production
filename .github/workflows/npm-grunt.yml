@@ -1,4 +1,4 @@
-name: .NET
+name: Node.js Build and Deploy
 
 on:
   push:
@@ -7,20 +7,45 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-
+  build-deploy:
     runs-on: self-hosted
-
+    strategy:
+      matrix:
+        node-version: [20.x]  # Recommended to upgrade from Node 16 (EOL)
+    
+    env:
+      DEPLOY_DIR: /home/dream4soft-salesapp/htdocs/salesapp.dream4soft.co.uk
+    
     steps:
-    - uses: actions/checkout@v3
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
       with:
-        dotnet-version: 9.0.x
-    - name: Restore dependencies
-      run: DOTNET_CLI_HOME=/tmp dotnet restore "Salony.Wasm/Salony.Wasm.csproj"
-    - name: Build
-      run: DOTNET_CLI_HOME=/tmp dotnet build "Salony.Wasm/Salony.Wasm.csproj" --no-restore
-    - name: Publish Project
-      run: DOTNET_CLI_HOME=/tmp dotnet publish "Salony.Wasm/Salony.Wasm.csproj" -c Release  -o /home/ahmedkamal-salony/htdocs/salony.ahmedkamal.online
-      
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'  # Adds caching for faster builds
+    
+    - name: Install dependencies
+      run: npm ci     # More reliable than npm install for CI
+      env:
+        NODE_ENV: production
+    
+    - name: Build project
+      run: npm run build
+    
+    - name: Verify build output
+      run: |
+        if [ ! -d "./dist" ]; then
+          echo "❌ Error: dist directory not found after build!"
+          exit 1
+        fi
+    
+    - name: Prepare deployment directory
+      run: |
+        mkdir -p $DEPLOY_DIR
+        chmod -R 755 $DEPLOY_DIR
+    
+    - name: Deploy to production
+      run: |
+        rsync -avh --delete ./dist/ $DEPLOY_DIR/
+        echo "Deployment completed successfully!"
