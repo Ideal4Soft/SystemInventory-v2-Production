@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAppContext } from "@/context/app-context";
 import { Button } from "@/components/ui/button";
-import React, { useMemo } from "react";
+import React, { useEffect } from "react";
 import {
   Package,
   Users,
@@ -39,60 +39,74 @@ interface Account {
 }
 
 interface StatsData {
-  totalSales?: number;
-  todaySales?: number;
-  invoiceCount?: number;
-  netProfit?: number;
+  totalSales: number;
+  todaySales: number;
+  invoiceCount: number;
+  netProfit: number;
+  customerCount?: number;
+  supplierCount?: number;
+  debtorBalance?: number;
+  creditorBalance?: number;
 }
 
 // Simple dashboard with direct API queries but with proper caching
 export default function DashboardView() {
   const { companyName } = useAppContext();
 
-  // Use a stable timestamp for the entire component lifecycle to prevent duplicate requests
-  const cacheTime = useMemo(() => Date.now(), []);
-  
-  // Get system stats - with proper cache control
-  const { data: stats = {} as StatsData } = useQuery<StatsData>({
+  // Get system stats
+  const statsQuery = useQuery({
     queryKey: ['/api/stats'],
-    staleTime: 60000, // Cache for 1 minute
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false
+    retry: 2
   });
-  
-  // Get accounts data - with proper cache control
-  const { data: accountsData = [] as Account[] } = useQuery<Account[]>({
+
+  // Get accounts data
+  const accountsQuery = useQuery({
     queryKey: ['/api/accounts'],
-    staleTime: 60000, // Cache for 1 minute
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false
+    retry: 2
   });
-  
-  // Get inventory data - with proper cache control
-  const { data: inventoryData = [] as InventoryItem[] } = useQuery<InventoryItem[]>({
+
+  // Get inventory data
+  const inventoryQuery = useQuery({
     queryKey: ['/api/inventory'],
-    staleTime: 60000, // Cache for 1 minute
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false
+    retry: 2
   });
+
+  // Log API responses for debugging
+  useEffect(() => {
+    if (statsQuery.data) {
+      console.log("Stats data:", statsQuery.data);
+    }
+    if (accountsQuery.data) {
+      console.log("Accounts data:", accountsQuery.data);
+    }
+    if (inventoryQuery.data) {
+      console.log("Inventory data:", inventoryQuery.data);
+    }
+  }, [statsQuery.data, accountsQuery.data, inventoryQuery.data]);
   
   // Process the data
+  const accountsData = Array.isArray(accountsQuery.data) ? accountsQuery.data : [];
+  const inventoryData = Array.isArray(inventoryQuery.data) ? inventoryQuery.data : [];
+  const stats = (statsQuery.data as StatsData) || {
+    totalSales: 0,
+    todaySales: 0,
+    invoiceCount: 0,
+    netProfit: 0
+  };
+  
   const customersWithDebit = accountsData
-    .filter((a: Account) => a && a.type === 'customer' && a.currentBalance > 0);
+    .filter(a => a && a.type === 'customer' && a.currentBalance > 0);
   
   const suppliersWithCredit = accountsData
-    .filter((a: Account) => a && a.type === 'supplier' && a.currentBalance > 0);
+    .filter(a => a && a.type === 'supplier' && a.currentBalance > 0);
   
-  const totalDebit = customersWithDebit.reduce((sum: number, a: Account) => sum + (a.currentBalance || 0), 0);
-  const totalCredit = suppliersWithCredit.reduce((sum: number, a: Account) => sum + (a.currentBalance || 0), 0);
+  const totalDebit = customersWithDebit.reduce((sum, a) => sum + (a.currentBalance || 0), 0);
+  const totalCredit = suppliersWithCredit.reduce((sum, a) => sum + (a.currentBalance || 0), 0);
   
   const inventoryWithStock = inventoryData
-    .filter((item: InventoryItem) => item && item.quantity > 0);
+    .filter(item => item && item.quantity > 0);
   
-  const totalInventoryItems = inventoryWithStock.reduce((sum: number, item: InventoryItem) => sum + (item.quantity || 0), 0);
+  const totalInventoryItems = inventoryWithStock.reduce((sum, item) => sum + (item.quantity || 0), 0);
   
   // Main navigation tiles
   const mainTiles = [
@@ -146,8 +160,39 @@ export default function DashboardView() {
     }
   ];
 
+  // Check if any queries are loading
+  const isLoading = statsQuery.isLoading || accountsQuery.isLoading || inventoryQuery.isLoading;
+  
+  // Check if any queries have errors
+  const hasErrors = statsQuery.error || accountsQuery.error || inventoryQuery.error;
+
   return (
-    <div className="min-h-screen bg-gray-50">      
+    <div className="min-h-screen bg-gray-50">
+      {/* Status section */}
+      {hasErrors && (
+        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 mx-4 mt-4 rounded shadow-sm">
+          <div className="flex items-center">
+            <div>
+              <p className="font-bold">خطأ في تحميل البيانات</p>
+              <p className="text-sm">
+                حدث خطأ أثناء تحميل بيانات لوحة التحكم. يرجى تحديث الصفحة أو التحقق من اتصالك بالخادم.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {isLoading && (
+        <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-4 mx-4 mt-4 rounded shadow-sm">
+          <div className="flex items-center">
+            <div>
+              <p className="font-bold">جاري تحميل البيانات...</p>
+              <p className="text-sm">يرجى الانتظار حتى يتم تحميل بيانات لوحة التحكم.</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="flex flex-col md:flex-row">
         {/* Main Content Area */}
         <div className="flex-1 p-6">

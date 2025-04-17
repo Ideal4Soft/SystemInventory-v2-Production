@@ -1,15 +1,27 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 // Base URL for the API
-export const API_BASE_URL = "http://localhost:5000";
+const isProduction = window.location.hostname !== 'localhost';
+export const API_BASE_URL = isProduction 
+  ? "" // Use relative URLs in production to avoid CORS issues
+  : "http://localhost:5000";
+
+console.log(`API base URL configured as: ${API_BASE_URL}`);
 
 // Utility function to get the full URL for API requests with cache busting
 export function getFullApiUrl(url: string): string {
-  // Add timestamp parameter only when necessary
+  // If the URL is already absolute, return it as is
   if (url.startsWith('http')) {
     return url;
   }
   
+  // In production, use relative URLs to avoid CORS issues
+  if (isProduction) {
+    // Make sure the URL starts with a slash
+    return url.startsWith('/') ? url : `/${url}`;
+  }
+  
+  // In development, use the full URL with localhost
   return `${API_BASE_URL}${url}`;
 }
 
@@ -44,12 +56,19 @@ export async function apiRequest(
     
     console.log(`API Request: ${method} ${fullUrl}`, data);
     
-    const res = await fetch(fullUrl, {
+    const fetchOptions: RequestInit = {
       method,
       headers,
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
-    });
+    };
+    
+    // In production, use 'same-origin' mode to avoid CORS issues
+    if (isProduction) {
+      fetchOptions.mode = 'same-origin';
+    }
+    
+    const res = await fetch(fullUrl, fetchOptions);
     
     // Check if response is HTML (which would indicate a problem)
     const contentType = res.headers.get('content-type') || '';
@@ -113,7 +132,7 @@ export const getQueryFn: <T>(options: {
     try {
       const fullUrl = getFullApiUrl(queryKey[0] as string);
       
-      const res = await fetch(fullUrl, {
+      const fetchOptions: RequestInit = {
         credentials: "include",
         headers: {
           "Accept": "application/json",
@@ -122,7 +141,14 @@ export const getQueryFn: <T>(options: {
           "Expires": "0"
         },
         cache: 'no-store'
-      });
+      };
+      
+      // In production, use 'same-origin' mode to avoid CORS issues
+      if (isProduction) {
+        fetchOptions.mode = 'same-origin';
+      }
+      
+      const res = await fetch(fullUrl, fetchOptions);
 
       if (unauthorizedBehavior === "returnNull" && res.status === 401) {
         return null;
@@ -157,11 +183,11 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: 0, // Disable caching
+      staleTime: 5000, // Cache for 5 seconds to prevent duplicate calls
       retry: 1,
       retryDelay: 1000,
       networkMode: 'always',
-      gcTime: 0, // Disable garbage collection
+      gcTime: 60000, // Set garbage collection time to 1 minute
       refetchOnMount: true,
     },
     mutations: {
