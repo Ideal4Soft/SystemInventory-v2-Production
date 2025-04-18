@@ -99,9 +99,15 @@ export default function DashboardView() {
   
   const suppliersWithCredit = accountsData
     .filter(a => a && a.type === 'supplier' && a.currentBalance > 0);
+    
+  // Add new filter for customers with credit balances (we owe them)
+  const customersWithCredit = accountsData
+    .filter(a => a && a.type === 'customer' && a.currentBalance < 0);
   
   const totalDebit = customersWithDebit.reduce((sum, a) => sum + (a.currentBalance || 0), 0);
   const totalCredit = suppliersWithCredit.reduce((sum, a) => sum + (a.currentBalance || 0), 0);
+  // Calculate the absolute value of total customer credit
+  const totalCustomerCredit = Math.abs(customersWithCredit.reduce((sum, a) => sum + (a.currentBalance || 0), 0));
   
   const inventoryWithStock = inventoryData
     .filter(item => item && item.quantity > 0);
@@ -147,7 +153,7 @@ export default function DashboardView() {
     {
       title: "المخزون المتاح",
       icon: <Package className="h-7 w-7 text-green-600" />,
-      value: `${totalInventoryItems} صنف`,
+      value: `${totalInventoryItems} طن`,
       bgColor: "bg-green-100",
       borderColor: "border-green-200"
     },
@@ -193,256 +199,197 @@ export default function DashboardView() {
         </div>
       )}
       
-      <div className="flex flex-col md:flex-row">
-        {/* Main Content Area */}
-        <div className="flex-1 p-6">
-          {/* Header Section */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-800">لوحة التحكم</h1>
-            <p className="text-gray-600">مرحبًا بك في نظام إدارة {companyName || 'الشركة'}</p>
-          </div>
-          
-          {/* Main Navigation Tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-            {mainTiles.map((tile, index) => (
-              <Link key={index} href={tile.path}>
-                <div className={`${tile.color} rounded-lg p-5 text-white text-center cursor-pointer hover:opacity-90 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-1`}>
-                  <div className="flex flex-col items-center justify-center">
-                    <tile.icon className="h-10 w-10 mb-3" />
-                    <span className="text-lg font-medium">{tile.title}</span>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-          
-          {/* Quick Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            {statsCards.map((card, index) => (
-              <div key={index} className={`${card.bgColor} rounded-lg shadow-md p-4 border ${card.borderColor}`}>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="text-gray-700 text-sm font-medium mb-1">{card.title}</h3>
-                    <p className="text-2xl font-bold text-gray-800">{card.value}</p>
-                  </div>
-                  <div className="p-3 bg-white bg-opacity-70 rounded-full shadow-sm">
-                    {card.icon}
-                  </div>
+      <div className="flex-1 p-6">
+        {/* Header Section */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">لوحة التحكم</h1>
+          <p className="text-gray-600">مرحبًا بك في نظام إدارة {companyName || 'الشركة'}</p>
+        </div>
+        
+        {/* Main Navigation Tiles */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+          {mainTiles.map((tile, index) => (
+            <Link key={index} href={tile.path}>
+              <div className={`${tile.color} rounded-lg p-5 text-white text-center cursor-pointer hover:opacity-90 transition-all shadow-md hover:shadow-lg transform hover:-translate-y-1`}>
+                <div className="flex flex-col items-center justify-center">
+                  <tile.icon className="h-10 w-10 mb-3" />
+                  <span className="text-lg font-medium">{tile.title}</span>
                 </div>
               </div>
-            ))}
-          </div>
-          
-          {/* Customer & Supplier Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="bg-white rounded-lg shadow-md p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-gray-800">
-                  <span className="flex items-center">
-                    <Users className="h-5 w-5 mr-2 text-blue-600" />
-                    العملاء المدينون (عليهم)
-                  </span>
-                </h2>
-                <Link href="/accounts?type=customer&balance=positive">
-                  <Button variant="outline" size="sm">عرض الكل</Button>
-                </Link>
-              </div>
-              
-              <div className="space-y-3">
-                <div className="flex justify-between items-center pb-2 border-b">
-                  <span className="font-medium text-sm text-gray-600">العميل</span>
-                  <span className="font-medium text-sm text-gray-600">المبلغ</span>
+            </Link>
+          ))}
+        </div>
+        
+        {/* Quick Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          {statsCards.map((card, index) => (
+            <div key={index} className={`${card.bgColor} rounded-lg shadow-md p-4 border ${card.borderColor}`}>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-gray-700 text-sm font-medium mb-1">{card.title}</h3>
+                  <p className="text-2xl font-bold text-gray-800">{card.value}</p>
                 </div>
-                
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-800">إجمالي المديونية</span>
-                  <span className="font-bold text-red-600">
-                    {formatCurrency(totalDebit)}
-                  </span>
+                <div className="p-3 bg-white bg-opacity-70 rounded-full shadow-sm">
+                  {card.icon}
                 </div>
-                
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-800">عدد العملاء المدينين</span>
-                  <span className="font-bold">
-                    {customersWithDebit.length} عميل
-                  </span>
-                </div>
-
-                {customersWithDebit.length > 0 ? (
-                  customersWithDebit.slice(0, 3).map(customer => (
-                    <div key={customer.id} className="flex justify-between items-center py-2 border-t">
-                      <span className="text-sm">{customer.name}</span>
-                      <span className="text-sm font-medium text-red-600">{formatCurrency(customer.currentBalance)}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-2 text-gray-500">لا يوجد عملاء مدينين</div>
-                )}
               </div>
             </div>
-            
-            <div className="bg-white rounded-lg shadow-md p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-gray-800">
-                  <span className="flex items-center">
-                    <Users className="h-5 w-5 mr-2 text-green-600" />
-                    الموردون (لهم)
-                  </span>
-                </h2>
-                <Link href="/accounts?type=supplier&balance=positive">
-                  <Button variant="outline" size="sm">عرض الكل</Button>
-                </Link>
-              </div>
-              
-              <div className="space-y-3">
-                <div className="flex justify-between items-center pb-2 border-b">
-                  <span className="font-medium text-sm text-gray-600">المورد</span>
-                  <span className="font-medium text-sm text-gray-600">المبلغ</span>
-                </div>
-                
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-800">إجمالي المستحقات</span>
-                  <span className="font-bold text-green-600">
-                    {formatCurrency(totalCredit)}
-                  </span>
-                </div>
-                
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-800">عدد الموردين</span>
-                  <span className="font-bold">
-                    {suppliersWithCredit.length} مورد
-                  </span>
-                </div>
-
-                {suppliersWithCredit.length > 0 ? (
-                  suppliersWithCredit.slice(0, 3).map(supplier => (
-                    <div key={supplier.id} className="flex justify-between items-center py-2 border-t">
-                      <span className="text-sm">{supplier.name}</span>
-                      <span className="text-sm font-medium text-green-600">{formatCurrency(supplier.currentBalance)}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-2 text-gray-500">لا يوجد موردين دائنين</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Inventory Section */}
-          <div className="bg-white rounded-lg shadow-md p-4 mb-8">
+          ))}
+        </div>
+        
+        {/* Customer & Supplier Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow-md p-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-800">
                 <span className="flex items-center">
-                  <Package className="h-5 w-5 mr-2 text-emerald-600" />
-                  المخزون المتاح
+                  <Users className="h-5 w-5 mr-2 text-blue-600" />
+                  العملاء المدينون (عليهم)
                 </span>
               </h2>
-              <Link href="/inventory">
+              <Link href="/accounts?type=customer&balance=positive">
                 <Button variant="outline" size="sm">عرض الكل</Button>
               </Link>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {inventoryWithStock.length > 0 ? (
-                <div className="space-y-2">
-                  {inventoryWithStock.slice(0, 5).map((item) => (
-                    <div key={item.id} className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-md border border-gray-100">
-                      <div>
-                        <p className="font-medium text-sm">{item.productName}</p>
-                        <p className="text-xs text-gray-500">{item.productCode || ''} - {item.warehouseName || 'المخزن الرئيسي'}</p>
-                      </div>
-                      <div className="text-sm font-bold text-emerald-600">{item.quantity}</div>
-                    </div>
-                  ))}
-                </div>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center pb-2 border-b">
+                <span className="font-medium text-sm text-gray-600">العميل</span>
+                <span className="font-medium text-sm text-gray-600">المبلغ</span>
+              </div>
+              
+              <div className="flex justify-between items-center py-2">
+                <span className="text-gray-800">إجمالي المديونية</span>
+                <span className="font-bold text-red-600">
+                  {formatCurrency(totalDebit)}
+                </span>
+              </div>
+              
+              <div className="flex justify-between items-center py-2">
+                <span className="text-gray-800">عدد العملاء المدينين</span>
+                <span className="font-bold">
+                  {customersWithDebit.length} عميل
+                </span>
+              </div>
+
+              {customersWithDebit.length > 0 ? (
+                customersWithDebit.slice(0, 3).map(customer => (
+                  <div key={customer.id} className="flex justify-between items-center py-2 border-t">
+                    <span className="text-sm">{customer.name}</span>
+                    <span className="text-sm font-medium text-red-600">{formatCurrency(customer.currentBalance)}</span>
+                  </div>
+                ))
               ) : (
-                <div className="col-span-2 text-center text-gray-500 py-4">لا توجد أصناف متاحة في المخزون</div>
+                <div className="text-center py-2 text-gray-500">لا يوجد عملاء مدينين</div>
               )}
             </div>
           </div>
           
-          {/* Reports Section */}
-          <div className="mb-8">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">التقارير والعمليات السريعة</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {reportTiles.map((tile, index) => (
-                <Link key={index} href={tile.path}>
-                  <div className={`${tile.color} rounded-lg p-3 text-white text-center cursor-pointer hover:opacity-90 transition hover:shadow-lg`}>
-                    <tile.icon className="h-8 w-8 mx-auto mb-2" />
-                    <span className="text-sm font-medium">{tile.title}</span>
+          <div className="bg-white rounded-lg shadow-md p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">
+                <span className="flex items-center">
+                  <Users className="h-5 w-5 mr-2 text-green-600" />
+                  العملاء الدائنين (لهم)
+                </span>
+              </h2>
+              <Link href="/accounts?type=customer&balance=negative">
+                <Button variant="outline" size="sm">عرض الكل</Button>
+              </Link>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex justify-between items-center pb-2 border-b">
+                <span className="font-medium text-sm text-gray-600">العميل</span>
+                <span className="font-medium text-sm text-gray-600">المبلغ</span>
+              </div>
+              
+              <div className="flex justify-between items-center py-2">
+                <span className="text-gray-800">إجمالي المستحقات</span>
+                <span className="font-bold text-green-600">
+                  {formatCurrency(totalCustomerCredit)}
+                </span>
+              </div>
+              
+              <div className="flex justify-between items-center py-2">
+                <span className="text-gray-800">عدد العملاء الدائنين</span>
+                <span className="font-bold">
+                  {customersWithCredit.length} عميل
+                </span>
+              </div>
+
+              {customersWithCredit.length > 0 ? (
+                customersWithCredit.slice(0, 3).map(customer => (
+                  <div key={customer.id} className="flex justify-between items-center py-2 border-t">
+                    <span className="text-sm">{customer.name}</span>
+                    <span className="text-sm font-medium text-green-600">{formatCurrency(Math.abs(customer.currentBalance))}</span>
                   </div>
-                </Link>
-              ))}
+                ))
+              ) : (
+                <div className="text-center py-2 text-gray-500">لا يوجد عملاء دائنين</div>
+              )}
             </div>
           </div>
         </div>
+
+        {/* Inventory Section */}
+        <div className="bg-white rounded-lg shadow-md p-4 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-800">
+              <span className="flex items-center">
+                <Package className="h-5 w-5 mr-2 text-emerald-600" />
+                المخزون المتاح
+              </span>
+            </h2>
+            <Link href="/inventory">
+              <Button variant="outline" size="sm">عرض الكل</Button>
+            </Link>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {inventoryWithStock.length > 0 ? (
+              <div className="space-y-2">
+                {inventoryWithStock.slice(0, 5).map((item) => (
+                  <div key={item.id} className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-md border border-gray-100">
+                    <div>
+                      <p className="font-medium text-sm">{item.productName}</p>
+                      <p className="text-xs text-gray-500">{item.productCode || ''} - {item.warehouseName || 'المخزن الرئيسي'}</p>
+                    </div>
+                    <div className="text-sm font-bold text-emerald-600">{item.quantity}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="col-span-2 text-center text-gray-500 py-4">لا توجد أصناف متاحة في المخزون</div>
+            )}
+          </div>
+        </div>
         
-        {/* Sidebar */}
-        <div className="w-full md:w-72 bg-gradient-to-b from-emerald-50 to-emerald-100 p-4 border-l border-emerald-200">
-          {/* Quick Tools */}
-          <div className="mb-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-3">أدوات سريعة</h3>
-            <div className="space-y-2">
-              <Link href="/settings">
-                <div className="flex items-center p-3 bg-white rounded-lg shadow cursor-pointer hover:bg-gray-50">
-                  <div className="w-10 h-10 flex items-center justify-center ml-3 bg-blue-500 text-white rounded-lg">
-                    <Settings className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-gray-800">إعداد سهل</h4>
-                    <p className="text-xs text-gray-500">ضبط إعدادات البرنامج</p>
-                  </div>
+        {/* Backup Section - Moved from Sidebar */}
+        <div className="bg-white rounded-lg shadow mb-8 p-4 border-r-4 border-amber-500 max-w-md mx-auto">
+          <h4 className="font-bold text-gray-800 mb-2">نسخة احتياطية</h4>
+          <p className="text-sm text-gray-600 mb-3">يجب عمل نسخة احتياطية بشكل دوري لضمان سلامة بياناتك</p>
+          <Button 
+            className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+            onClick={handleBackup}
+          >
+            <Database className="h-4 w-4 ml-2" />
+            عمل نسخة الآن
+          </Button>
+        </div>
+        
+        {/* Reports Section */}
+        <div className="mb-8">
+          <h2 className="text-xl font-bold text-gray-800 mb-4">التقارير والعمليات السريعة</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {reportTiles.map((tile, index) => (
+              <Link key={index} href={tile.path}>
+                <div className={`${tile.color} rounded-lg p-3 text-white text-center cursor-pointer hover:opacity-90 transition hover:shadow-lg`}>
+                  <tile.icon className="h-8 w-8 mx-auto mb-2" />
+                  <span className="text-sm font-medium">{tile.title}</span>
                 </div>
               </Link>
-              
-              <div className="flex items-center p-3 bg-white rounded-lg shadow cursor-pointer hover:bg-gray-50">
-                <div className="w-10 h-10 flex items-center justify-center ml-3 bg-blue-500 text-white rounded-lg">
-                  <BookOpen className="h-5 w-5" />
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-800">تعلم</h4>
-                  <p className="text-xs text-gray-500">دليل استخدام البرنامج</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Statistics Summary */}
-          <div className="mb-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-3">إحصائيات سريعة</h3>
-            <div className="bg-white rounded-lg shadow p-4">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-sm font-medium text-gray-700">المبيعات اليوم</span>
-                <span className="text-emerald-600 font-bold">
-                  {stats?.todaySales ? formatCurrency(stats.todaySales) : "0.00 ج.م"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-sm font-medium text-gray-700">عدد الفواتير</span>
-                <span className="text-emerald-600 font-bold">{stats?.invoiceCount || "0"}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">الربح الصافي</span>
-                <span className="text-emerald-600 font-bold">
-                  {stats?.netProfit ? formatCurrency(stats.netProfit) : "0.00 ج.م"}
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Backup Reminder */}
-          <div>
-            <div className="bg-white rounded-lg shadow p-4 border-r-4 border-amber-500">
-              <h4 className="font-bold text-gray-800 mb-2">نسخة احتياطية</h4>
-              <p className="text-sm text-gray-600 mb-3">يجب عمل نسخة احتياطية بشكل دوري لضمان سلامة بياناتك</p>
-              <Button 
-                className="w-full bg-amber-500 hover:bg-amber-600 text-white"
-                onClick={handleBackup}
-              >
-                <Database className="h-4 w-4 ml-2" />
-                عمل نسخة الآن
-              </Button>
-            </div>
+            ))}
           </div>
         </div>
       </div>

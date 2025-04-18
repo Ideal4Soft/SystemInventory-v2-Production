@@ -33,13 +33,26 @@ export default function ReportsView() {
   const [isError, setIsError] = useState(false);
 
   // Fetch report data
-  const { data: reportData = [], isLoading, refetch } = useQuery({
+  const { data: reportData = [], isLoading, error, refetch } = useQuery({
     queryKey: ['/api/reports', reportType, startDate, endDate],
     queryFn: async () => {
       try {
         setIsError(false);
-        const res = await fetch(`/api/reports?type=${reportType}&startDate=${startDate}&endDate=${endDate}`);
-        if (!res.ok) throw new Error('Failed to fetch report');
+        console.log(`Fetching report: type=${reportType}, startDate=${startDate}, endDate=${endDate}`);
+        
+        const encodedStartDate = encodeURIComponent(startDate);
+        const encodedEndDate = encodeURIComponent(endDate);
+        const url = `/api/reports?type=${reportType}&startDate=${encodedStartDate}&endDate=${encodedEndDate}`;
+        
+        console.log(`Request URL: ${url}`);
+        const res = await fetch(url);
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error(`Server error: ${res.status} ${res.statusText}`, errorText);
+          throw new Error(`فشل في جلب البيانات: ${res.status} ${res.statusText}`);
+        }
+        
         const data = await res.json();
         
         // Sort data from newest to oldest
@@ -51,10 +64,11 @@ export default function ReportsView() {
       } catch (error) {
         console.error("Error fetching report:", error);
         setIsError(true);
-        return [];
+        throw error; // Let React Query handle the error
       }
     },
     enabled: false, // Don't fetch automatically, only when button is clicked
+    retry: 1,       // Only retry once on failure
   });
 
   // Handler for the "Show Report" button
@@ -206,21 +220,24 @@ export default function ReportsView() {
               </div>
               <div className="flex items-end">
                 <Button 
-                  className="w-full bg-amber-500 hover:bg-amber-600"
-                  onClick={handleShowReport}
+                  onClick={handleShowReport} 
+                  className="w-full md:w-auto"
                   disabled={isLoading}
                 >
-                  {isLoading ? (
-                    <>
-                      <span className="animate-spin mr-2">⏳</span>
-                      جاري التحميل...
-                    </>
-                  ) : (
-                    "عرض التقرير"
-                  )}
+                  {isLoading ? "جاري التحميل..." : "عرض التقرير"}
                 </Button>
               </div>
             </div>
+
+            {isError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 rounded-md p-4 mb-6">
+                <h3 className="font-bold">حدث خطأ أثناء تحميل البيانات</h3>
+                <p>يرجى المحاولة مرة أخرى لاحقاً</p>
+                {error instanceof Error && (
+                  <p className="mt-2 text-sm">{error.message}</p>
+                )}
+              </div>
+            )}
 
             {/* Tab content container */}
             <div className="mt-4">

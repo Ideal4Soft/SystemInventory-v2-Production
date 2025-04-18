@@ -20,7 +20,12 @@ import {
   X,
   Download,
   Upload,
-  FileDown
+  FileDown,
+  ShoppingCart,
+  ArrowUpRight,
+  ArrowDownRight,
+  BarChart2,
+  AlertCircle
 } from "lucide-react";
 import ProductForm from "./product-form";
 import CategoryForm from "./category-form";
@@ -87,6 +92,43 @@ interface ProductWithInventory {
   value: number;
 }
 
+interface Transaction {
+  id: number;
+  date: string;
+  type: 'purchase' | 'sale' | 'adjustment';
+  quantity: number;
+  description: string;
+  documentNumber?: string;
+  accountName?: string;
+}
+
+interface InventoryTransactionResponse {
+  id: number;
+  date: string;
+  productId: number;
+  warehouseId: number;
+  quantity: number;
+  documentId?: number;
+  documentType?: string;
+  reference?: string;
+  note?: string;
+  userId?: number;
+  createdAt: string;
+  unitPrice?: number;
+  warehouseName?: string;
+}
+
+interface InvoiceResponse {
+  id: number;
+  invoiceNumber: string;
+  accountId: number;
+  account?: {
+    id: number;
+    name: string;
+    type: string;
+  };
+}
+
 // Define a type for the cell info object
 interface CellInfo {
   row: {
@@ -109,6 +151,10 @@ export default function InventoryView() {
   const [showCountDialog, setShowCountDialog] = useState(false);
   const [countProduct, setCountProduct] = useState<ProductWithInventory | null>(null);
   const [countValue, setCountValue] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState<ProductWithInventory | null>(null);
+  const [showTransactionHistory, setShowTransactionHistory] = useState(false);
+  const [productTransactions, setProductTransactions] = useState<Transaction[]>([]);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -186,6 +232,16 @@ export default function InventoryView() {
       sellPrice: product.sellPrice1 || 0,
       value: (inventoryItem.quantity || 0) * (product.costPrice || 0)
     };
+  });
+  
+  // Sort products to display available products (quantity > 0) at the top
+  const sortedProductsWithInventory = [...productsWithInventory].sort((a, b) => {
+    // First sort by availability (quantity > 0)
+    if (a.quantity > 0 && b.quantity === 0) return -1;
+    if (a.quantity === 0 && b.quantity > 0) return 1;
+    
+    // If both have same availability status, sort by name
+    return a.name.localeCompare(b.name);
   });
   
   // Delete product mutation
@@ -458,47 +514,132 @@ export default function InventoryView() {
     getExcelTemplate('products');
   };
 
+  // Fetch product transactions
+  const fetchProductTransactions = async (productId: number) => {
+    try {
+      setIsLoadingTransactions(true);
+      
+      // Use the existing inventory-transactions API endpoint with productId query param
+      const transactions = await apiRequest(`/api/inventory-transactions?productId=${productId}`, 'GET');
+      
+      if (transactions && Array.isArray(transactions)) {
+        // Create a map to store account names by document ID and type
+        const accountNameMap = new Map();
+        
+        // Collect all document IDs for invoices and purchases
+        const invoiceIds = new Set();
+        const purchaseIds = new Set();
+        
+        transactions.forEach((item: InventoryTransactionResponse) => {
+          if (item.documentId) {
+            if (item.documentType === 'invoice') {
+              invoiceIds.add(item.documentId);
+            } else if (item.documentType === 'purchase') {
+              purchaseIds.add(item.documentId);
+            }
+          }
+        });
+        
+        // Fetch invoice data if we have invoice documentIds
+        if (invoiceIds.size > 0) {
+          try {
+            const invoices = await apiRequest('/api/invoices?include=details', 'GET');
+            if (Array.isArray(invoices)) {
+              invoices.forEach((invoice: InvoiceResponse) => {
+                if (invoiceIds.has(invoice.id) && invoice.account) {
+                  accountNameMap.set(`invoice_${invoice.id}`, invoice.account.name);
+                }
+              });
+            }
+          } catch (error) {
+            console.error('Error fetching invoice data:', error);
+          }
+        }
+        
+        // Fetch purchase data if we have purchase documentIds
+        if (purchaseIds.size > 0) {
+          try {
+            const purchases = await apiRequest('/api/purchases?include=details', 'GET');
+            if (Array.isArray(purchases)) {
+              purchases.forEach((purchase: InvoiceResponse) => {
+                if (purchaseIds.has(purchase.id) && purchase.account) {
+                  accountNameMap.set(`purchase_${purchase.id}`, purchase.account.name);
+                }
+              });
+            }
+          } catch (error) {
+            console.error('Error fetching purchase data:', error);
+          }
+        }
+        
+        // Transform API response to our Transaction interface format
+        const formattedTransactions: Transaction[] = transactions.map((item: InventoryTransactionResponse) => {
+          // Determine transaction type based on documentType and quantity
+          let type: 'purchase' | 'sale' | 'adjustment' = 'adjustment';
+          let description = 'تعديل في المخزون';
+          let accountName = '';
+          
+          if (item.documentType === 'purchase') {
+            type = 'purchase';
+            description = 'فاتورة شراء';
+            // Get account name from our map
+            accountName = item.documentId ? accountNameMap.get(`purchase_${item.documentId}`) || 'المورد' : 'المورد';
+          } else if (item.documentType === 'invoice') {
+            type = 'sale';
+            description = 'فاتورة بيع';
+            // Get account name from our map
+            accountName = item.documentId ? accountNameMap.get(`invoice_${item.documentId}`) || 'العميل' : 'العميل';
+          } else if (item.documentType === 'adjustment') {
+            type = 'adjustment';
+            description = 'جرد مخزن';
+          }
+          
+          // If there's a note, use it as description
+          if (item.note) {
+            description = item.note;
+          }
+          
+          return {
+            id: item.id,
+            date: new Date(item.date).toISOString().split('T')[0],
+            type: type,
+            quantity: item.quantity,
+            description: description,
+            documentNumber: item.reference || `${item.documentType?.toUpperCase()}-${item.documentId}`,
+            accountName: accountName
+          };
+        });
+        
+        // Sort by date, most recent first
+        formattedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        setProductTransactions(formattedTransactions);
+      } else {
+        // No transactions found
+        setProductTransactions([]);
+      }
+    } catch (error) {
+      console.error('Error fetching product transactions:', error);
+      toast({
+        title: 'خطأ في جلب البيانات',
+        description: 'حدث خطأ أثناء محاولة جلب سجل العمليات للمنتج',
+        variant: 'destructive'
+      });
+      setProductTransactions([]);
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  };
+  
+  // Handle opening transaction history dialog
+  const handleViewTransactions = (product: ProductWithInventory) => {
+    setSelectedProduct(product);
+    setShowTransactionHistory(true);
+    fetchProductTransactions(product.id);
+  };
+
   // Define product columns
   const productColumns = [
-    {
-      id: "code",
-      header: "الكود",
-      accessorKey: "code",
-    },
-    {
-      id: "name",
-      header: "الصنف",
-      accessorKey: "name",
-    },
-    {
-      id: "category",
-      header: "الفئة",
-      accessorKey: "category",
-    },
-    {
-      id: "quantity",
-      header: "الكمية",
-      accessorKey: "quantity",
-      cell: (info: CellInfo) => {
-        const product = info.row.original as ProductWithInventory;
-        return `${product.quantity} ${product.unit}`;
-      }
-    },
-    {
-      id: "costPrice",
-      header: "سعر التكلفة",
-      accessorKey: "costPrice",
-    },
-    {
-      id: "sellPrice",
-      header: "سعر البيع",
-      accessorKey: "sellPrice",
-    },
-    {
-      id: "value",
-      header: "القيمة",
-      accessorKey: "value",
-    },
     {
       id: "actions",
       header: "الإجراءات",
@@ -507,8 +648,8 @@ export default function InventoryView() {
         const product = info.row.original as ProductWithInventory;
         return (
           <div className="flex space-x-1 space-x-reverse">
-            <Badge variant={product.quantity > 0 ? "default" : "destructive"} className="bg-green-100 text-green-800 hover:bg-green-100">
-              متوفر
+            <Badge variant={product.quantity > 0 ? "default" : "destructive"} className={product.quantity > 0 ? "bg-green-100 text-green-800 hover:bg-green-100" : "bg-red-100 text-red-800 hover:bg-red-100"}>
+              {product.quantity > 0 ? "متوفر" : "غير متوفر"}
             </Badge>
             <Button 
               variant="ghost" 
@@ -548,49 +689,61 @@ export default function InventoryView() {
             >
               <Layers className="h-4 w-4" />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-purple-600 hover:text-purple-900 hover:bg-purple-50"
+              onClick={() => handleViewTransactions(product)}
+            >
+              <BarChart2 className="h-4 w-4" />
+            </Button>
           </div>
         );
       }
+    },
+    {
+      id: "value",
+      header: "القيمة",
+      accessorKey: "value",
+    },
+    {
+      id: "sellPrice",
+      header: "سعر البيع",
+      accessorKey: "sellPrice",
+    },
+    {
+      id: "costPrice",
+      header: "سعر التكلفة",
+      accessorKey: "costPrice",
+    },
+    {
+      id: "quantity",
+      header: "الكمية",
+      accessorKey: "quantity",
+      cell: (info: CellInfo) => {
+        const product = info.row.original as ProductWithInventory;
+        return `${product.quantity} ${product.unit}`;
+      }
+    },
+    {
+      id: "category",
+      header: "الفئة",
+      accessorKey: "category",
+    },
+    {
+      id: "name",
+      header: "الصنف",
+      accessorKey: "name",
+    },
+    {
+      id: "code",
+      header: "الكود",
+      accessorKey: "code",
     }
   ];
 
   // Define category columns
   const categoryColumns = [
-    {
-      id: "name",
-      header: "اسم الفئة",
-      accessorKey: "name",
-    },
-    {
-      id: "parent",
-      header: "الفئة الأم",
-      accessorKey: "parent_id",
-      cell: (info: CellInfo) => {
-        const category = info.row.original as Category;
-        const parentCategory = categories.find((c: Category) => c.id === category.parent_id);
-        return parentCategory?.name || "—";
-      }
-    },
-    {
-      id: "description",
-      header: "الوصف",
-      accessorKey: "description",
-      cell: (info: CellInfo) => {
-        const category = info.row.original as Category;
-        return category.description || "—";
-      }
-    },
-    {
-      id: "isDefault",
-      header: "افتراضي",
-      accessorKey: "isDefault",
-      cell: (info: CellInfo) => {
-        const category = info.row.original as Category;
-        return category.isDefault ? (
-          <Check className="h-5 w-5 text-green-600" />
-        ) : "—";
-      }
-    },
     {
       id: "actions",
       header: "الإجراءات",
@@ -621,62 +774,46 @@ export default function InventoryView() {
           </div>
         );
       }
-    }
-  ];
-
-  // Define warehouse columns
-  const warehouseColumns = [
-    {
-      id: "name",
-      header: "اسم المخزن",
-      accessorKey: "name",
-    },
-    {
-      id: "location",
-      header: "الموقع",
-      accessorKey: "location",
-      cell: (info: CellInfo) => {
-        const warehouse = info.row.original as Warehouse;
-        return warehouse.location || "—";
-      }
-    },
-    {
-      id: "manager",
-      header: "المشرف",
-      accessorKey: "manager",
-      cell: (info: CellInfo) => {
-        const warehouse = info.row.original as Warehouse;
-        return warehouse.manager || "—";
-      }
     },
     {
       id: "isDefault",
       header: "افتراضي",
       accessorKey: "isDefault",
       cell: (info: CellInfo) => {
-        const warehouse = info.row.original as Warehouse;
-        return warehouse.isDefault ? (
+        const category = info.row.original as Category;
+        return category.isDefault ? (
           <Check className="h-5 w-5 text-green-600" />
         ) : "—";
       }
     },
     {
-      id: "status",
-      header: "الحالة",
-      accessorKey: "isActive",
+      id: "description",
+      header: "الوصف",
+      accessorKey: "description",
       cell: (info: CellInfo) => {
-        const warehouse = info.row.original as Warehouse;
-        return warehouse.isActive ? (
-          <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-            نشط
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200">
-            غير نشط
-          </Badge>
-        );
+        const category = info.row.original as Category;
+        return category.description || "—";
       }
     },
+    {
+      id: "parent",
+      header: "الفئة الأم",
+      accessorKey: "parent_id",
+      cell: (info: CellInfo) => {
+        const category = info.row.original as Category;
+        const parentCategory = categories.find((c: Category) => c.id === category.parent_id);
+        return parentCategory?.name || "—";
+      }
+    },
+    {
+      id: "name",
+      header: "اسم الفئة",
+      accessorKey: "name",
+    }
+  ];
+
+  // Define warehouse columns
+  const warehouseColumns = [
     {
       id: "actions",
       header: "الإجراءات",
@@ -701,12 +838,60 @@ export default function InventoryView() {
               size="icon" 
               className="text-red-600 hover:text-red-900 hover:bg-red-50"
               onClick={() => setWarehouseToDelete(warehouse)}
+              disabled={warehouse.isDefault}
             >
               <Trash className="h-4 w-4" />
             </Button>
           </div>
         );
       }
+    },
+    {
+      id: "isActive",
+      header: "نشط",
+      accessorKey: "isActive",
+      cell: (info: CellInfo) => {
+        const warehouse = info.row.original as Warehouse;
+        return warehouse.isActive ? (
+          <Check className="h-5 w-5 text-green-600" />
+        ) : (
+          <X className="h-5 w-5 text-red-600" />
+        );
+      }
+    },
+    {
+      id: "isDefault",
+      header: "افتراضي",
+      accessorKey: "isDefault",
+      cell: (info: CellInfo) => {
+        const warehouse = info.row.original as Warehouse;
+        return warehouse.isDefault ? (
+          <Check className="h-5 w-5 text-green-600" />
+        ) : "—";
+      }
+    },
+    {
+      id: "manager",
+      header: "المشرف",
+      accessorKey: "manager",
+      cell: (info: CellInfo) => {
+        const warehouse = info.row.original as Warehouse;
+        return warehouse.manager || "—";
+      }
+    },
+    {
+      id: "location",
+      header: "الموقع",
+      accessorKey: "location",
+      cell: (info: CellInfo) => {
+        const warehouse = info.row.original as Warehouse;
+        return warehouse.location || "—";
+      }
+    },
+    {
+      id: "name",
+      header: "اسم المخزن",
+      accessorKey: "name",
     }
   ];
 
@@ -807,7 +992,7 @@ export default function InventoryView() {
         
         <TabsContent value="products" className="p-4">
           <DataTable
-            data={productsWithInventory}
+            data={sortedProductsWithInventory}
             columns={productColumns}
             isLoading={isLoading}
             emptyMessage="لا توجد منتجات للعرض"
@@ -966,6 +1151,105 @@ export default function InventoryView() {
           <AlertDialogFooter>
             <AlertDialogCancel>إلغاء</AlertDialogCancel>
             <AlertDialogAction onClick={handleCountSubmit}>تحديث</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Transaction History Dialog */}
+      <AlertDialog 
+        open={showTransactionHistory} 
+        onOpenChange={(open) => !open && setShowTransactionHistory(false)}
+      >
+        <AlertDialogContent className="max-w-4xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>سجل حركة المنتج</AlertDialogTitle>
+            <AlertDialogDescription>
+              عرض عمليات الشراء والبيع والتعديل للمنتج: {selectedProduct?.name}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <div className="py-4">
+            {isLoadingTransactions ? (
+              <div className="flex justify-center items-center py-8">
+                <div className="text-center">
+                  <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2 text-green-600" />
+                  <p>جاري تحميل البيانات...</p>
+                </div>
+              </div>
+            ) : productTransactions.length > 0 ? (
+              <div className="overflow-y-auto max-h-[400px]">
+                <table className="w-full border-collapse">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="p-2 border text-right">التاريخ</th>
+                      <th className="p-2 border text-right">نوع العملية</th>
+                      <th className="p-2 border text-right">الكمية</th>
+                      <th className="p-2 border text-right">الوصف</th>
+                      <th className="p-2 border text-right">الحساب</th>
+                      <th className="p-2 border text-right">رقم المستند</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productTransactions.map((transaction) => (
+                      <tr key={transaction.id} className="hover:bg-gray-50">
+                        <td className="p-2 border">{transaction.date}</td>
+                        <td className="p-2 border">
+                          <div className="flex items-center">
+                            {transaction.type === 'purchase' && (
+                              <>
+                                <ShoppingCart className="h-4 w-4 text-green-600 ml-1" />
+                                <span className="text-green-700">شراء</span>
+                              </>
+                            )}
+                            {transaction.type === 'sale' && (
+                              <>
+                                <ArrowUpRight className="h-4 w-4 text-blue-600 ml-1" />
+                                <span className="text-blue-700">بيع</span>
+                              </>
+                            )}
+                            {transaction.type === 'adjustment' && (
+                              <>
+                                <AlertCircle className="h-4 w-4 text-amber-600 ml-1" />
+                                <span className="text-amber-700">تعديل</span>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td className={`p-2 border font-medium ${
+                          transaction.quantity > 0 
+                            ? 'text-green-600' 
+                            : 'text-red-600'
+                        }`}>
+                          {transaction.quantity > 0 ? '+' : ''}{transaction.quantity} {selectedProduct?.unit}
+                        </td>
+                        <td className="p-2 border">{transaction.description}</td>
+                        <td className="p-2 border">{transaction.accountName || '—'}</td>
+                        <td className="p-2 border">{transaction.documentNumber || '—'}</td>
+                      </tr>
+                    ))}
+                    
+                    {/* Summary row */}
+                    <tr className="bg-gray-100 font-bold">
+                      <td colSpan={2} className="p-2 border text-center">الإجمالي</td>
+                      <td className="p-2 border">
+                        {selectedProduct?.quantity} {selectedProduct?.unit}
+                      </td>
+                      <td colSpan={3} className="p-2 border"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <AlertCircle className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="text-lg">لا توجد معاملات مسجلة لهذا المنتج</p>
+                <p className="text-sm mt-2">لم يتم العثور على سجل للشراء أو البيع أو التعديلات</p>
+              </div>
+            )}
+          </div>
+          
+          <AlertDialogFooter>
+            <AlertDialogCancel>إغلاق</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

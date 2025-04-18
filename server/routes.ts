@@ -2458,11 +2458,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { type, startDate, endDate } = req.query;
       
+      console.log(`Generating report: type=${type}, startDate=${startDate}, endDate=${endDate}`);
+      
       if (!type) {
         return res.status(400).json({ message: "Report type is required" });
       }
       
       let reportData: any[] = [];
+      
+      // Validate date parameters
+      let validStartDate: Date | undefined;
+      let validEndDate: Date | undefined;
+      
+      if (startDate && typeof startDate === 'string') {
+        try {
+          validStartDate = new Date(startDate);
+          if (isNaN(validStartDate.getTime())) {
+            return res.status(400).json({ message: "Invalid start date format" });
+          }
+        } catch (error) {
+          console.error("Error parsing start date:", error);
+          return res.status(400).json({ message: "Invalid start date format" });
+        }
+      }
+      
+      if (endDate && typeof endDate === 'string') {
+        try {
+          validEndDate = new Date(endDate);
+          if (isNaN(validEndDate.getTime())) {
+            return res.status(400).json({ message: "Invalid end date format" });
+          }
+        } catch (error) {
+          console.error("Error parsing end date:", error);
+          return res.status(400).json({ message: "Invalid end date format" });
+        }
+      }
       
       // Generate sample data based on report type
       switch (type) {
@@ -2486,12 +2516,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // In a real implementation, we would filter the data based on start and end dates
-      // and retrieve the data from the database
+      // For now, just return the sample data
+      console.log(`Generated ${reportData.length} records for ${type} report`);
       
-      res.status(200).json(reportData);
+      return res.status(200).json(reportData);
     } catch (error) {
       console.error("Error generating report:", error);
-      res.status(500).json({ message: "Error generating report" });
+      return res.status(500).json({ message: "Error generating report: " + (error instanceof Error ? error.message : "Unknown error") });
     }
   });
   
@@ -2652,26 +2683,266 @@ export async function registerRoutes(app: Express): Promise<Server> {
         total: 880.00, 
         status: "partially_paid" 
       },
+      // Add more sample data
       { 
         invoiceNumber: "INV-1003", 
         date: "2023-11-05", 
         accountName: "عميل 3", 
-        total: 1430.75, 
-        status: "posted" 
+        total: 1500.75, 
+        status: "pending" 
       },
       { 
         invoiceNumber: "INV-1004", 
-        date: "2023-11-08", 
+        date: "2023-11-10", 
         accountName: "عميل 1", 
-        total: 950.25, 
-        status: "draft" 
+        total: 750.25, 
+        status: "paid" 
       },
       { 
         invoiceNumber: "INV-1005", 
-        date: "2023-11-10", 
+        date: "2023-11-15", 
         accountName: "عميل 4", 
-        total: 2100.00, 
+        total: 3200.00, 
         status: "paid" 
+      }
+    ];
+  }
+  
+  // Helper function to generate sample purchases data
+  function generateSamplePurchasesData() {
+    return [
+      { 
+        invoiceNumber: "PUR-1001", 
+        date: "2023-11-02", 
+        accountName: "مورد 1", 
+        total: 2250.50, 
+        status: "paid" 
+      },
+      { 
+        invoiceNumber: "PUR-1002", 
+        date: "2023-11-05", 
+        accountName: "مورد 2", 
+        total: 1880.00, 
+        status: "partially_paid" 
+      },
+      { 
+        invoiceNumber: "PUR-1003", 
+        date: "2023-11-08", 
+        accountName: "مورد 1", 
+        total: 3500.75, 
+        status: "pending" 
+      },
+      { 
+        invoiceNumber: "PUR-1004", 
+        date: "2023-11-12", 
+        accountName: "مورد 3", 
+        total: 950.25, 
+        status: "paid" 
+      },
+      { 
+        invoiceNumber: "PUR-1005", 
+        date: "2023-11-18", 
+        accountName: "مورد 2", 
+        total: 4200.00, 
+        status: "paid" 
+      }
+    ];
+  }
+  
+  // Helper function to generate sample inventory data
+  function generateSampleInventoryData() {
+    return [
+      {
+        productId: 1,
+        productName: "منتج 1",
+        productCode: "P001",
+        quantity: 50,
+        costPrice: 100,
+        sellPrice: 150,
+        value: 5000,
+        warehouseName: "المخزن الرئيسي"
+      },
+      {
+        productId: 2,
+        productName: "منتج 2",
+        productCode: "P002",
+        quantity: 30,
+        costPrice: 200,
+        sellPrice: 300,
+        value: 6000,
+        warehouseName: "المخزن الرئيسي"
+      },
+      {
+        productId: 3,
+        productName: "منتج 3",
+        productCode: "P003",
+        quantity: 15,
+        costPrice: 150,
+        sellPrice: 225,
+        value: 2250,
+        warehouseName: "المخزن الرئيسي"
+      },
+      {
+        productId: 4,
+        productName: "منتج 4",
+        productCode: "P004",
+        quantity: 40,
+        costPrice: 80,
+        sellPrice: 120,
+        value: 3200,
+        warehouseName: "المخزن الرئيسي"
+      },
+      {
+        productId: 5,
+        productName: "منتج 5",
+        productCode: "P005",
+        quantity: 25,
+        costPrice: 120,
+        sellPrice: 180,
+        value: 3000,
+        warehouseName: "المخزن الرئيسي"
+      }
+    ];
+  }
+  
+  // Helper function to generate sample customers data
+  function generateSampleCustomersData() {
+    return [
+      {
+        id: 1,
+        name: "عميل 1",
+        type: "customer",
+        currentBalance: 2500,
+        lastTransaction: {
+          date: "2023-11-15",
+          amount: 500,
+          type: "payment"
+        },
+        totalPurchases: 8000,
+        totalPayments: 5500
+      },
+      {
+        id: 2,
+        name: "عميل 2",
+        type: "customer",
+        currentBalance: 1800,
+        lastTransaction: {
+          date: "2023-11-10",
+          amount: 300,
+          type: "payment"
+        },
+        totalPurchases: 4500,
+        totalPayments: 2700
+      },
+      {
+        id: 3,
+        name: "عميل 3",
+        type: "customer",
+        currentBalance: 1200,
+        lastTransaction: {
+          date: "2023-11-05",
+          amount: 1000,
+          type: "invoice"
+        },
+        totalPurchases: 3200,
+        totalPayments: 2000
+      },
+      {
+        id: 4,
+        name: "عميل 4",
+        type: "customer",
+        currentBalance: 3500,
+        lastTransaction: {
+          date: "2023-11-20",
+          amount: 1500,
+          type: "invoice"
+        },
+        totalPurchases: 10000,
+        totalPayments: 6500
+      },
+      {
+        id: 5,
+        name: "عميل 5",
+        type: "customer",
+        currentBalance: -500, // عميل دائن (لهم)
+        lastTransaction: {
+          date: "2023-11-22",
+          amount: 1000,
+          type: "payment"
+        },
+        totalPurchases: 5000,
+        totalPayments: 5500
+      }
+    ];
+  }
+  
+  // Helper function to generate sample suppliers data
+  function generateSampleSuppliersData() {
+    return [
+      {
+        id: 11,
+        name: "مورد 1",
+        type: "supplier",
+        currentBalance: -3500, // مورد دائن (لهم)
+        lastTransaction: {
+          date: "2023-11-18",
+          amount: 1000,
+          type: "payment"
+        },
+        totalPurchases: 12000,
+        totalPayments: 8500
+      },
+      {
+        id: 12,
+        name: "مورد 2",
+        type: "supplier",
+        currentBalance: -2200,
+        lastTransaction: {
+          date: "2023-11-12",
+          amount: 2200,
+          type: "invoice"
+        },
+        totalPurchases: 8500,
+        totalPayments: 6300
+      },
+      {
+        id: 13,
+        name: "مورد 3",
+        type: "supplier",
+        currentBalance: -1500,
+        lastTransaction: {
+          date: "2023-11-08",
+          amount: 500,
+          type: "payment"
+        },
+        totalPurchases: 4500,
+        totalPayments: 3000
+      },
+      {
+        id: 14,
+        name: "مورد 4",
+        type: "supplier",
+        currentBalance: 800, // مورد مدين (علينا)
+        lastTransaction: {
+          date: "2023-11-25",
+          amount: 2000,
+          type: "payment"
+        },
+        totalPurchases: 5000,
+        totalPayments: 5800
+      },
+      {
+        id: 15,
+        name: "مورد 5",
+        type: "supplier",
+        currentBalance: -4200,
+        lastTransaction: {
+          date: "2023-11-15",
+          amount: 4200,
+          type: "invoice"
+        },
+        totalPurchases: 15000,
+        totalPayments: 10800
       }
     ];
   }
