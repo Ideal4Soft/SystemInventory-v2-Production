@@ -2459,6 +2459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { type, startDate, endDate } = req.query;
       
       console.log(`Generating report: type=${type}, startDate=${startDate}, endDate=${endDate}`);
+      console.log(`DEBUG - Report API - Using mock data: ${dbUsingMockData}`);
       
       if (!type) {
         return res.status(400).json({ message: "Report type is required" });
@@ -2494,29 +2495,242 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Generate sample data based on report type
-      switch (type) {
-        case 'sales':
-          reportData = generateSampleSalesData();
-          break;
-        case 'purchases':
-          reportData = generateSamplePurchasesData();
-          break;
-        case 'inventory':
-          reportData = generateSampleInventoryData();
-          break;
-        case 'customers':
-          reportData = generateSampleCustomersData();
-          break;
-        case 'suppliers':
-          reportData = generateSampleSuppliersData();
-          break;
-        default:
-          return res.status(400).json({ message: "Invalid report type" });
+      // Use mock data if configured
+      if (dbUsingMockData) {
+        console.log(`Using mock data for ${type} report`);
+        // Generate sample data based on report type
+        switch (type) {
+          case 'sales':
+            reportData = generateSampleSalesData();
+            break;
+          case 'purchases':
+            reportData = generateSamplePurchasesData();
+            break;
+          case 'inventory':
+            reportData = generateSampleInventoryData();
+            break;
+          case 'customers':
+            reportData = generateSampleCustomersData();
+            break;
+          case 'suppliers':
+            reportData = generateSampleSuppliersData();
+            break;
+          default:
+            return res.status(400).json({ message: "Invalid report type" });
+        }
+      } else {
+        console.log(`Fetching real data for ${type} report`);
+        // Fetch real data from database based on report type
+        switch (type) {
+          case 'sales':
+            // Fetch real sales data
+            const salesData = await storage.listInvoices(undefined, validStartDate, validEndDate);
+            // Filter sales invoices and fetch account info for each
+            const salesWithAccounts = await Promise.all(
+              salesData.filter(invoice => invoice.invoiceNumber.startsWith('INV-'))
+                .map(async (invoice) => {
+                  let accountName = '';
+                  // Get account details if available
+                  if (invoice.accountId) {
+                    try {
+                      const account = await storage.getAccount(invoice.accountId);
+                      if (account) {
+                        accountName = account.name;
+                      }
+                    } catch (err) {
+                      console.error('Error fetching account details for invoice:', err);
+                    }
+                  }
+                  return {
+                    invoiceNumber: invoice.invoiceNumber,
+                    date: invoice.date,
+                    accountName: accountName,
+                    total: invoice.total,
+                    status: invoice.status
+                  };
+                })
+            );
+            reportData = salesWithAccounts;
+            break;
+          case 'purchases':
+            try {
+              // Fetch real purchases data using the listPurchases method
+              const purchasesData = await storage.listPurchases(undefined, validStartDate, validEndDate);
+              
+              // If no purchases are found, try to find them using invoices with PUR prefix
+              if (purchasesData.length === 0) {
+                console.log('No purchases found using listPurchases, falling back to alternative method');
+                const allInvoices = await storage.listInvoices(undefined, validStartDate, validEndDate);
+                const purchaseInvoices = allInvoices.filter(inv => inv.invoiceNumber.startsWith('PUR-'));
+                
+                // Map and add account names
+                reportData = await Promise.all(
+                  purchaseInvoices.map(async (invoice) => {
+                    let accountName = '';
+                    // Get account details if available
+                    if (invoice.accountId) {
+                      try {
+                        const account = await storage.getAccount(invoice.accountId);
+                        if (account) {
+                          accountName = account.name;
+                        }
+                      } catch (err) {
+                        console.error('Error fetching account details for purchase:', err);
+                      }
+                    }
+                    return {
+                      invoiceNumber: invoice.invoiceNumber,
+                      date: invoice.date,
+                      accountName: accountName,
+                      total: invoice.total,
+                      status: invoice.status
+                    };
+                  })
+                );
+              } else {
+                // Map purchase data with account names
+                reportData = await Promise.all(
+                  purchasesData.map(async (purchase) => {
+                    let accountName = '';
+                    // Get account details if available
+                    if (purchase.accountId) {
+                      try {
+                        const account = await storage.getAccount(purchase.accountId);
+                        if (account) {
+                          accountName = account.name;
+                        }
+                      } catch (err) {
+                        console.error('Error fetching account details for purchase:', err);
+                      }
+                    }
+                    return {
+                      invoiceNumber: purchase.purchaseNumber,
+                      date: purchase.date,
+                      accountName: accountName,
+                      total: purchase.total,
+                      status: purchase.status
+                    };
+                  })
+                );
+              }
+            } catch (error) {
+              console.error("Error fetching purchases:", error);
+              // Fallback - search for purchases in invoices
+              const allInvoices = await storage.listInvoices(undefined, validStartDate, validEndDate);
+              const purchaseInvoices = allInvoices.filter(inv => inv.invoiceNumber.startsWith('PUR-'));
+              
+              reportData = await Promise.all(
+                purchaseInvoices.map(async (invoice) => {
+                  let accountName = '';
+                  // Get account details if available
+                  if (invoice.accountId) {
+                    try {
+                      const account = await storage.getAccount(invoice.accountId);
+                      if (account) {
+                        accountName = account.name;
+                      }
+                    } catch (err) {
+                      console.error('Error fetching account details for purchase:', err);
+                    }
+                  }
+                  return {
+                    invoiceNumber: invoice.invoiceNumber,
+                    date: invoice.date,
+                    accountName: accountName,
+                    total: invoice.total,
+                    status: invoice.status
+                  };
+                })
+              );
+            }
+            break;
+          case 'inventory':
+            // Fetch real inventory data
+            const inventoryData = await storage.listInventory();
+            // Get product details for each inventory item
+            const products = await storage.listProducts();
+            
+            reportData = inventoryData.map(item => {
+              const product = products.find(p => p.id === item.productId);
+              return {
+                id: item.productId,
+                name: product?.name || 'غير معروف',
+                quantity: item.quantity,
+                costPrice: product?.costPrice || 0,
+                sellPrice1: product?.sellPrice1 || 0,
+                totalValue: (item.quantity || 0) * (product?.costPrice || 0)
+              };
+            });
+            break;
+          case 'customers':
+            // Fetch real customers data
+            const customersData = await storage.listAccounts('customer');
+            reportData = await Promise.all(customersData.map(async customer => {
+              // Get invoices for this customer
+              const invoices = await storage.listInvoices(customer.id);
+              const customerInvoices = invoices.filter(inv => inv.invoiceNumber.startsWith('INV-'));
+              // Calculate total sales
+              const totalSales = customerInvoices.reduce((sum, inv) => sum + inv.total, 0);
+              // Get latest transaction date
+              const latestInvoice = customerInvoices.sort((a, b) => 
+                new Date(b.date).getTime() - new Date(a.date).getTime()
+              )[0];
+              
+              return {
+                id: customer.id,
+                name: customer.name,
+                invoiceCount: customerInvoices.length,
+                totalSales: totalSales,
+                lastTransaction: latestInvoice?.date
+              };
+            }));
+            break;
+          case 'suppliers':
+            // Fetch real suppliers data
+            const suppliersData = await storage.listAccounts('supplier');
+            reportData = await Promise.all(suppliersData.map(async supplier => {
+              try {
+                // First try to get purchases using the regular method
+                let purchases = await storage.listPurchases(supplier.id);
+                
+                // If no purchases are found, look for invoices with PUR prefix
+                if (purchases.length === 0) {
+                  console.log(`No purchases found using listPurchases for supplier ${supplier.id}, checking invoices`);
+                  const allInvoices = await storage.listInvoices(supplier.id);
+                  purchases = allInvoices.filter(inv => inv.invoiceNumber.startsWith('PUR-'));
+                }
+                
+                // Calculate total purchases
+                const totalPurchases = purchases.reduce((sum, inv) => sum + inv.total, 0);
+                
+                // Get latest transaction date
+                const latestPurchase = purchases.length > 0 ? 
+                  purchases.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] : null;
+                
+                return {
+                  id: supplier.id,
+                  name: supplier.name,
+                  invoiceCount: purchases.length,
+                  totalPurchases: totalPurchases,
+                  lastTransaction: latestPurchase?.date
+                };
+              } catch (error) {
+                console.error(`Error processing supplier ${supplier.id}:`, error);
+                return {
+                  id: supplier.id,
+                  name: supplier.name,
+                  invoiceCount: 0,
+                  totalPurchases: 0,
+                  lastTransaction: null
+                };
+              }
+            }));
+            break;
+          default:
+            return res.status(400).json({ message: "Invalid report type" });
+        }
       }
       
-      // In a real implementation, we would filter the data based on start and end dates
-      // For now, just return the sample data
       console.log(`Generated ${reportData.length} records for ${type} report`);
       
       return res.status(200).json(reportData);

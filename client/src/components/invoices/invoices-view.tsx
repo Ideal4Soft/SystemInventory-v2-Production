@@ -334,7 +334,7 @@ export default function InvoicesView() {
                             </TableCell>
                             <TableCell>{new Date(invoice.date).toLocaleDateString()}</TableCell>
                             <TableCell>{invoice.account?.name || "-"}</TableCell>
-                            <TableCell className="text-center">{totalQuantity.toFixed(2)}</TableCell>
+                            <TableCell className="text-center">{totalQuantity !== undefined && totalQuantity !== null ? totalQuantity.toFixed(2) : "0.00"}</TableCell>
                             <TableCell>{details.length}</TableCell>
                             <TableCell>{formatCurrency(avgUnitPrice)}</TableCell>
                             <TableCell>{formatCurrency(invoice.total)}</TableCell>

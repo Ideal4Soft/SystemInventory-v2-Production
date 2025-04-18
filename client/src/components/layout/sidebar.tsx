@@ -52,22 +52,22 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
     { title: "تقارير", icon: BarChart3, path: "/reports" }
   ];
   
-  // Report navigation items
+  // Report navigation items - Removed duplicates
   const reportNavItems = [
-    { title: "تحليل المبيعات", icon: BarChart3, path: "/reports" },
-    { title: "الحركة اليومية", icon: Clock, path: "/reports" },
-    { title: "كشف الحسابات", icon: FileText, path: "/reports" },
+    { title: "تحليل المبيعات", icon: BarChart3, path: "/reports/sales" },
+    { title: "الحركة اليومية", icon: Clock, path: "/reports/daily" },
+    { title: "كشف الحسابات", icon: FileText, path: "/reports/accounts" },
     { title: "استيراد بيانات", icon: Upload, path: "/import" }
   ];
   
-  // Operations navigation items
+  // Operations navigation items - Removed duplicates and consolidated paths
   const operationNavItems = [
-    { title: "جرد مخزن", icon: Package, path: "/inventory" },
-    { title: "مصاريف", icon: DollarSign, path: "/finance" },
-    { title: "شراء", icon: ShoppingCart, path: "/invoices" },
-    { title: "تسوية مخزن", icon: LayoutGrid, path: "/inventory" },
-    { title: "تحويل لمخزن", icon: ArrowUpDownIcon, path: "/inventory" },
-    { title: "بيع", icon: Tag, path: "/invoices" }
+    { title: "جرد مخزن", icon: Package, path: "/inventory/stocktake" },
+    { title: "مصاريف", icon: DollarSign, path: "/finance/expenses" },
+    { title: "شراء", icon: ShoppingCart, path: "/invoices/purchase/new" },
+    { title: "تسوية مخزن", icon: LayoutGrid, path: "/inventory/adjust" },
+    { title: "تحويل لمخزن", icon: ArrowUpDownIcon, path: "/inventory/transfer" },
+    { title: "بيع", icon: Tag, path: "/invoices/sale/new" }
   ];
   
   // Admin navigation items
@@ -163,8 +163,11 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
               onClick={handleLinkClick}
             >
               <Button
-                variant="ghost"
-                className="w-full justify-start"
+                variant={location === item.path ? "secondary" : "ghost"}
+                className={cn(
+                  "w-full justify-start",
+                  location === item.path ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
+                )}
               >
                 <item.icon className={cn("h-5 w-5 ml-2", !open && "mx-auto")} />
                 {open && <span>{item.title}</span>}

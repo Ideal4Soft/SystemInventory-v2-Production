@@ -227,7 +227,7 @@ export default function PurchasesView() {
                         <TableCell>{invoice.invoiceNumber}</TableCell>
                         <TableCell>{formatDate(invoice.date)}</TableCell>
                         <TableCell>{invoice.account?.name}</TableCell>
-                        <TableCell className="text-center">{invoice.total?.toFixed(2)} ج.م</TableCell>
+                        <TableCell className="text-center">{invoice.total !== undefined && invoice.total !== null ? invoice.total.toFixed(2) : "0.00"} ج.م</TableCell>
                         <TableCell className="text-center">{getStatusBadge(invoice.status)}</TableCell>
                         <TableCell className="text-center">
                           <div className="flex justify-center space-x-1 space-x-reverse">

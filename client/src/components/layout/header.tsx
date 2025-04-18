@@ -6,11 +6,13 @@ import { cn } from "@/lib/utils";
 import { X, Plus, Menu, Package, Users, DollarSign, FileText, LayoutGrid } from "lucide-react";
 import { useTab } from "@/hooks/use-tab";
 
-interface HeaderProps {
+export interface HeaderProps {
   pageTitle: string;
+  toggleSidebar?: () => void;
+  sidebarOpen?: boolean;
 }
 
-export default function Header({ pageTitle }: HeaderProps) {
+export default function Header({ pageTitle, toggleSidebar, sidebarOpen }: HeaderProps) {
   const [location, navigate] = useLocation();
   const { user, companyName } = useAppContext();
   const { tabs, activeTab, addTab, removeTab, setActiveTab } = useTab();
@@ -65,6 +67,18 @@ export default function Header({ pageTitle }: HeaderProps) {
       <div className="flex items-center justify-between px-4 py-2">
         {/* Logo and Company Info */}
         <div className="flex items-center space-x-2 space-x-reverse">
+          {/* Menu Toggle */}
+          {toggleSidebar && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={toggleSidebar} 
+              className="mr-2"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
+          
           {/* Green Logo */}
           <div className="bg-primary p-1 rounded">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">

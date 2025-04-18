@@ -20,6 +20,12 @@ import {
   ArrowDownToLine,
   FileSpreadsheet
 } from "lucide-react";
+import { 
+  exportProductsToExcel, 
+  exportAccountsToExcel, 
+  exportInvoicesToExcel,
+  exportTransactionsToExcel 
+} from "@/lib/excel-utils";
 // import { DatePickerWithRange } from "@/components/ui/date-range-picker";
 
 export default function ReportsView() {
@@ -77,13 +83,59 @@ export default function ReportsView() {
   };
 
   const exportReport = () => {
-    // In a real implementation, we would generate and download a CSV/Excel file
     if (!reportData || reportData.length === 0) {
       alert("لا توجد بيانات للتصدير!");
       return;
     }
     
-    alert("تم تصدير التقرير بنجاح!");
+    try {
+      // Use the appropriate export function based on report type
+      switch (reportType) {
+        case 'sales':
+        case 'purchases':
+          // For sales and purchases, use invoice export
+          exportInvoicesToExcel(reportData.map(item => ({
+            ...item,
+            type: reportType,
+            details: [],
+            totalQuantity: 1,
+            discountAmount: 0,
+            taxAmount: 0,
+            subtotal: item.total
+          })));
+          break;
+          
+        case 'inventory':
+          // For inventory, use product export
+          exportProductsToExcel(reportData.map(item => ({
+            ...item,
+            code: item.id?.toString() || '',
+            category: '',
+            sellPrice: item.sellPrice1 || 0
+          })));
+          break;
+          
+        case 'customers':
+        case 'suppliers':
+          // For customers and suppliers, use accounts export
+          exportAccountsToExcel(reportData.map(item => ({
+            ...item,
+            code: item.id?.toString() || '',
+            type: reportType === 'customers' ? 'customer' : 'supplier',
+            openingBalance: reportType === 'customers' ? item.totalSales : item.totalPurchases
+          })));
+          break;
+          
+        default:
+          alert("نوع التقرير غير مدعوم للتصدير!");
+          return;
+      }
+      
+      alert("تم تصدير التقرير بنجاح!");
+    } catch (error) {
+      console.error("Error exporting to Excel:", error);
+      alert("حدث خطأ أثناء تصدير البيانات!");
+    }
   };
 
   const printReport = () => {
@@ -183,12 +235,12 @@ export default function ReportsView() {
       </div>
       
       <Tabs defaultValue="sales" onValueChange={setReportType}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="sales">تقرير المبيعات</TabsTrigger>
-          <TabsTrigger value="purchases">تقرير المشتريات</TabsTrigger>
-          <TabsTrigger value="inventory">تقرير المخزون</TabsTrigger>
-          <TabsTrigger value="customers">تقرير العملاء</TabsTrigger>
-          <TabsTrigger value="suppliers">تقرير الموردين</TabsTrigger>
+        <TabsList className="mb-4 flex-wrap">
+          <TabsTrigger value="sales">فواتير المبيعات</TabsTrigger>
+          <TabsTrigger value="purchases">فواتير المشتريات</TabsTrigger>
+          <TabsTrigger value="inventory">حركة المخزون</TabsTrigger>
+          <TabsTrigger value="customers">حسابات العملاء</TabsTrigger>
+          <TabsTrigger value="suppliers">حسابات الموردين</TabsTrigger>
         </TabsList>
         
         <Card>
@@ -242,7 +294,7 @@ export default function ReportsView() {
             {/* Tab content container */}
             <div className="mt-4">
               <TabsContent value="sales" className="mt-0">
-                <h3 className="text-lg font-medium mb-4">تقرير المبيعات</h3>
+                <h3 className="text-lg font-medium mb-4">فواتير المبيعات</h3>
                 <ReportTable
                   headers={['رقم الفاتورة', 'التاريخ', 'العميل', 'الإجمالي', 'الحالة']}
                   data={reportData}
@@ -252,7 +304,7 @@ export default function ReportsView() {
                   columns={['invoiceNumber', 'date', 'accountName', 'total', 'status']}
                   formatters={{
                     date: (value) => new Date(value).toLocaleDateString('ar-EG'),
-                    total: (value) => `${value.toFixed(2)} ج.م`,
+                    total: (value) => value !== undefined && value !== null ? `${Number(value).toFixed(2)} ج.م` : "0.00 ج.م",
                     status: (value) => getStatusLabel(value)
                   }}
                   isError={isError}
@@ -260,7 +312,7 @@ export default function ReportsView() {
               </TabsContent>
               
               <TabsContent value="purchases" className="mt-0">
-                <h3 className="text-lg font-medium mb-4">تقرير المشتريات</h3>
+                <h3 className="text-lg font-medium mb-4">فواتير المشتريات</h3>
                 <ReportTable
                   headers={['رقم الفاتورة', 'التاريخ', 'المورد', 'الإجمالي', 'الحالة']}
                   data={reportData}
@@ -270,7 +322,7 @@ export default function ReportsView() {
                   columns={['invoiceNumber', 'date', 'accountName', 'total', 'status']}
                   formatters={{
                     date: (value) => new Date(value).toLocaleDateString('ar-EG'),
-                    total: (value) => `${value.toFixed(2)} ج.م`,
+                    total: (value) => value !== undefined && value !== null ? `${Number(value).toFixed(2)} ج.م` : "0.00 ج.م",
                     status: (value) => getStatusLabel(value)
                   }}
                   isError={isError}
@@ -278,7 +330,7 @@ export default function ReportsView() {
               </TabsContent>
 
               <TabsContent value="inventory" className="mt-0">
-                <h3 className="text-lg font-medium mb-4">تقرير المخزون</h3>
+                <h3 className="text-lg font-medium mb-4">حركة المخزون</h3>
                 <ReportTable
                   headers={['المنتج', 'الكمية', 'سعر الشراء', 'سعر البيع', 'القيمة الإجمالية']}
                   data={reportData}
@@ -287,16 +339,16 @@ export default function ReportsView() {
                   keyField="id"
                   columns={['name', 'quantity', 'costPrice', 'sellPrice1', 'totalValue']}
                   formatters={{
-                    costPrice: (value) => `${value.toFixed(2)} ج.م`,
-                    sellPrice1: (value) => `${value.toFixed(2)} ج.م`,
-                    totalValue: (value) => `${value.toFixed(2)} ج.م`
+                    costPrice: (value) => value !== undefined && value !== null ? `${Number(value).toFixed(2)} ج.م` : "0.00 ج.م",
+                    sellPrice1: (value) => value !== undefined && value !== null ? `${Number(value).toFixed(2)} ج.م` : "0.00 ج.م",
+                    totalValue: (value) => value !== undefined && value !== null ? `${Number(value).toFixed(2)} ج.م` : "0.00 ج.م"
                   }}
                   isError={isError}
                 />
               </TabsContent>
 
               <TabsContent value="customers" className="mt-0">
-                <h3 className="text-lg font-medium mb-4">تقرير العملاء</h3>
+                <h3 className="text-lg font-medium mb-4">حسابات العملاء</h3>
                 <ReportTable
                   headers={['العميل', 'عدد الفواتير', 'إجمالي المبيعات', 'آخر معاملة']}
                   data={reportData}
@@ -305,7 +357,7 @@ export default function ReportsView() {
                   keyField="id"
                   columns={['name', 'invoiceCount', 'totalSales', 'lastTransaction']}
                   formatters={{
-                    totalSales: (value) => `${value.toFixed(2)} ج.م`,
+                    totalSales: (value) => value !== undefined && value !== null ? `${Number(value).toFixed(2)} ج.م` : "0.00 ج.م",
                     lastTransaction: (value) => value ? new Date(value).toLocaleDateString('ar-EG') : "-"
                   }}
                   isError={isError}
@@ -313,7 +365,7 @@ export default function ReportsView() {
               </TabsContent>
               
               <TabsContent value="suppliers" className="mt-0">
-                <h3 className="text-lg font-medium mb-4">تقرير الموردين</h3>
+                <h3 className="text-lg font-medium mb-4">حسابات الموردين</h3>
                 <ReportTable
                   headers={['المورد', 'عدد الفواتير', 'إجمالي المشتريات', 'آخر معاملة']}
                   data={reportData}
@@ -322,7 +374,7 @@ export default function ReportsView() {
                   keyField="id"
                   columns={['name', 'invoiceCount', 'totalPurchases', 'lastTransaction']}
                   formatters={{
-                    totalPurchases: (value) => `${value.toFixed(2)} ج.م`,
+                    totalPurchases: (value) => value !== undefined && value !== null ? `${Number(value).toFixed(2)} ج.م` : "0.00 ج.م",
                     lastTransaction: (value) => value ? new Date(value).toLocaleDateString('ar-EG') : "-"
                   }}
                   isError={isError}

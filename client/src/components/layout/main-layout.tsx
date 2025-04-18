@@ -36,10 +36,18 @@ export default function MainLayout({ children }: MainLayoutProps) {
       case "/import":
         setPageTitle("استيراد بيانات العملاء والموردين");
         break;
+      case "/reports":
+        setPageTitle("التقارير");
+        break;
       default:
         setPageTitle("سهل لإدارة الأعمال");
     }
   }, [location]);
+  
+  // Update document title when pageTitle changes
+  useEffect(() => {
+    document.title = `${pageTitle} | سهل لإدارة الأعمال`;
+  }, [pageTitle]);
 
   // Function to toggle sidebar
   const toggleSidebar = () => {
@@ -49,9 +57,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
   return (
     <div className="flex min-h-screen flex-col bg-gray-100">
       <Header 
+        pageTitle={pageTitle} 
         toggleSidebar={toggleSidebar} 
-        sidebarOpen={sidebarOpen}
-        pageTitle={pageTitle}
+        sidebarOpen={sidebarOpen} 
       />
       
       <div className="flex flex-1 overflow-hidden">
