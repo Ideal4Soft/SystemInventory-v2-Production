@@ -2101,6 +2101,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get next invoice number API endpoint
+  app.get("/api/next-invoice-number", async (req, res) => {
+    try {
+      const { type } = req.query;
+      const isPurchase = type === 'purchase';
+      
+      if (dbUsingMockData) {
+        // For mock data, get last invoice from mock invoices
+        const lastInvoice = mockInvoices
+          .filter(invoice => {
+            if (isPurchase) {
+              return invoice.invoiceNumber.startsWith('PUR-');
+            } else {
+              return invoice.invoiceNumber.startsWith('INV-');
+            }
+          })
+          .sort((a, b) => {
+            // Extract numeric part from invoice number
+            const numA = parseInt(a.invoiceNumber.split('-')[1]) || 0;
+            const numB = parseInt(b.invoiceNumber.split('-')[1]) || 0;
+            return numB - numA; // Sort in descending order
+          })[0];
+        
+        let nextNumber;
+        
+        if (lastInvoice) {
+          // Extract number part from the last invoice number
+          const lastNumStr = lastInvoice.invoiceNumber.split('-')[1];
+          const lastNum = parseInt(lastNumStr);
+          const nextNum = lastNum + 1;
+          nextNumber = isPurchase ? `PUR-${nextNum}` : `INV-${nextNum}`;
+        } else {
+          // No existing invoices, start with 1
+          nextNumber = isPurchase ? 'PUR-1' : 'INV-1';
+        }
+        
+        return res.json({ number: nextNumber });
+      }
+      
+      // For real database, use the storage helper function
+      try {
+        const nextNumber = await storage.getNextInvoiceNumber(isPurchase);
+        res.json({ number: nextNumber });
+      } catch (error) {
+        console.error('Error getting next invoice number:', error);
+        res.status(500).json({ message: 'Failed to get next invoice number' });
+      }
+    } catch (error) {
+      console.error('Error in next-invoice-number endpoint:', error);
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
+
   // Get invoice by ID
   app.get("/api/invoices/:id", async (req, res) => {
     try {

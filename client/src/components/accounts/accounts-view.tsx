@@ -344,7 +344,19 @@ export default function AccountsView() {
   
   // Export accounts to Excel
   const exportAccounts = () => {
-    // Export logic here
+    if (accounts && accounts.length > 0) {
+      exportAccountsToExcel(accounts);
+      toast({
+        title: "تم التصدير بنجاح",
+        description: `تم تصدير ${accounts.length} حسابات إلى ملف Excel`,
+      });
+    } else {
+      toast({
+        title: "لا توجد بيانات",
+        description: "لا توجد حسابات للتصدير",
+        variant: "destructive",
+      });
+    }
   };
   
   // Download Excel template

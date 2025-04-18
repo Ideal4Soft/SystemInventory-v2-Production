@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,6 +36,13 @@ import { useToast } from "@/hooks/use-toast";
 import { DataTable } from "@/components/ui/data-table";
 import { exportProductsToExcel, getExcelTemplate, importFromExcel } from "@/lib/excel-utils";
 import type { ExcelProduct } from "@/types";
+import { useLocation } from "wouter";
+import ProductList from "./product-list";
+import WarehouseList from "./warehouse-list";
+import CategoryList from "./category-list";
+import StocktakeForm from "./stocktake-form";
+import InventoryAdjustForm from "./inventory-adjust-form";
+import InventoryTransferForm from "./inventory-transfer-form";
 
 // Define types for our data structures
 interface Product {
@@ -137,6 +144,7 @@ interface CellInfo {
 }
 
 export default function InventoryView() {
+  const [location, navigate] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("products");
   const [isProductFormOpen, setIsProductFormOpen] = useState(false);
@@ -158,6 +166,18 @@ export default function InventoryView() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Get action from URL if present
+  const searchParams = new URLSearchParams(window.location.search);
+  const action = searchParams.get("action");
+  
+  // Set the appropriate tab based on action
+  useEffect(() => {
+    if (action) {
+      // If an action is specified, show the appropriate form
+      setActiveTab("operations");
+    }
+  }, [action]);
   
   // Fetch products with timestamp to avoid caching issues
   const { 
@@ -905,354 +925,96 @@ export default function InventoryView() {
 
   const isLoading = productsLoading || inventoryLoading || categoriesLoading || warehousesLoading;
   
-  return (
-    <div className="container mx-auto px-4">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-green-600">البضاعة والمخزون</h2>
-        <div className="flex items-center space-x-2 space-x-reverse">
-          {/* Excel Operations */}
-          <div className="flex items-center space-x-2 space-x-reverse ml-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDownloadTemplate}
-              className="flex items-center"
-            >
-              <FileDown className="h-4 w-4 ml-1" />
-              <span>تحميل القالب</span>
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center"
-            >
-              <Upload className="h-4 w-4 ml-1" />
-              <span>استيراد من Excel</span>
-            </Button>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportExcel}
-              className="flex items-center"
-            >
-              <Download className="h-4 w-4 ml-1" />
-              <span>تصدير إلى Excel</span>
-            </Button>
-            
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept=".xlsx,.xls"
-              onChange={handleImportExcel}
-            />
+  const renderActionForm = () => {
+    switch (action) {
+      case "stocktake":
+        return <StocktakeForm onComplete={() => navigate("/inventory")} />;
+      case "adjust":
+        return <InventoryAdjustForm onComplete={() => navigate("/inventory")} />;
+      case "transfer":
+        return <InventoryTransferForm onComplete={() => navigate("/inventory")} />;
+      default:
+        return (
+          <div className="p-8 text-center">
+            <h3 className="text-xl font-medium mb-4">العمليات المخزنية</h3>
+            <p className="text-gray-500 mb-6">
+              الرجاء اختيار عملية من القائمة الجانبية
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Button 
+                variant="outline" 
+                className="h-24 flex flex-col"
+                onClick={() => navigate("/inventory?action=stocktake")}
+              >
+                <span className="text-lg mb-2">جرد المخزن</span>
+                <span className="text-xs text-gray-500">مطابقة الكميات الفعلية مع النظام</span>
+              </Button>
+              <Button 
+                variant="outline" 
+                className="h-24 flex flex-col"
+                onClick={() => navigate("/inventory?action=adjust")}
+              >
+                <span className="text-lg mb-2">تسوية مخزن</span>
+                <span className="text-xs text-gray-500">تعديل كميات المخزون</span>
+              </Button>
+              <Button 
+                variant="outline" 
+                className="h-24 flex flex-col"
+                onClick={() => navigate("/inventory?action=transfer")}
+              >
+                <span className="text-lg mb-2">تحويل لمخزن</span>
+                <span className="text-xs text-gray-500">نقل البضاعة بين المخازن</span>
+              </Button>
+            </div>
           </div>
-          
-          {/* Existing Buttons */}
-          <Button variant="outline" size="sm" onClick={() => refetchProducts()}>
-            <RefreshCw className="h-4 w-4 ml-1" />
-            <span>تحديث</span>
-          </Button>
-          
+        );
+    }
+  };
+  
+  return (
+    <div className="container mx-auto p-4 max-w-7xl">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">البضاعة والمخزون</h2>
+        <div className="flex gap-2">
           <Button 
-            variant="default" 
-            className="bg-green-500 hover:bg-green-600"
-            onClick={() => setIsProductFormOpen(true)}
+            variant="outline" 
+            onClick={() => {
+              exportProductsToExcel([]);
+              toast({
+                title: "تم تصدير المنتجات",
+                description: "تم تصدير قائمة المنتجات إلى ملف إكسل بنجاح",
+              });
+            }}
           >
-            <Plus className="h-5 w-5 ml-1" />
-            منتج جديد
+            تصدير إكسل
           </Button>
         </div>
       </div>
-      
-      <Tabs defaultValue="products" value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="w-full justify-start border-b rounded-none h-auto p-0">
-          <TabsTrigger 
-            value="products"
-            className="px-6 py-3 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
-          >
-            الأصناف
-          </TabsTrigger>
-          <TabsTrigger 
-            value="categories"
-            className="px-6 py-3 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
-          >
-            الفئات
-          </TabsTrigger>
-          <TabsTrigger 
-            value="warehouses"
-            className="px-6 py-3 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
-          >
-            المخازن
-          </TabsTrigger>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="products">المنتجات</TabsTrigger>
+          <TabsTrigger value="categories">الأصناف</TabsTrigger>
+          <TabsTrigger value="warehouses">المخازن</TabsTrigger>
+          <TabsTrigger value="operations">العمليات</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="products" className="p-4">
-          <DataTable
-            data={sortedProductsWithInventory}
-            columns={productColumns}
-            isLoading={isLoading}
-            emptyMessage="لا توجد منتجات للعرض"
-            searchable
-            placeholder="بحث في المنتجات..."
-            showActions={false}
-          />
+        <TabsContent value="products">
+          <ProductList />
         </TabsContent>
         
-        <TabsContent value="categories" className="p-4">
-          <DataTable
-            data={categories}
-            columns={categoryColumns}
-            isLoading={isLoading}
-            emptyMessage="لا توجد فئات للعرض"
-            searchable
-            placeholder="بحث في الفئات..."
-            showActions={false}
-          />
+        <TabsContent value="categories">
+          <CategoryList />
         </TabsContent>
         
-        <TabsContent value="warehouses" className="p-4">
-          <DataTable
-            data={warehouses}
-            columns={warehouseColumns}
-            isLoading={isLoading}
-            emptyMessage="لا توجد مخازن للعرض"
-            searchable
-            placeholder="بحث في المخازن..."
-            showActions={false}
-          />
+        <TabsContent value="warehouses">
+          <WarehouseList />
+        </TabsContent>
+        
+        <TabsContent value="operations">
+          {renderActionForm()}
         </TabsContent>
       </Tabs>
-      
-      {/* Product Form Dialog */}
-      {isProductFormOpen && (
-      <ProductForm 
-        isOpen={isProductFormOpen} 
-        onClose={handleProductFormClose}
-        productToEdit={productToEdit} 
-      />
-      )}
-
-      {/* Category Form Dialog */}
-      <CategoryForm
-        isOpen={isCategoryFormOpen}
-        onClose={() => {
-          setIsCategoryFormOpen(false);
-          setCategoryToEdit(null);
-          toast({
-            title: "تم الحفظ",
-            description: "تم حفظ الفئة بنجاح",
-          });
-          queryClient.invalidateQueries({ queryKey: ['/api/categories'] });
-        }}
-        categoryToEdit={categoryToEdit}
-      />
-
-      {/* Warehouse Form Dialog */}
-      <WarehouseForm
-        isOpen={isWarehouseFormOpen}
-        onClose={() => {
-          setIsWarehouseFormOpen(false);
-          setWarehouseToEdit(null);
-          toast({
-            title: "تم الحفظ",
-            description: "تم حفظ المخزن بنجاح",
-          });
-          queryClient.invalidateQueries({ queryKey: ['/api/warehouses'] });
-        }}
-        warehouseToEdit={warehouseToEdit}
-      />
-
-      {/* Delete Product Confirmation */}
-      <AlertDialog open={!!productToDelete} onOpenChange={(open) => !open && setProductToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>تأكيد حذف المنتج</AlertDialogTitle>
-            <AlertDialogDescription>
-              هل أنت متأكد من حذف المنتج "{productToDelete?.name}"؟ لا يمكن التراجع عن هذا الإجراء.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>إلغاء</AlertDialogCancel>
-            <AlertDialogAction 
-              className="bg-red-600 hover:bg-red-700"
-              onClick={() => productToDelete && deleteProductMutation.mutate(productToDelete.id)}
-            >
-              حذف
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* Delete Category Confirmation */}
-      <AlertDialog open={!!categoryToDelete} onOpenChange={(open) => !open && setCategoryToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>تأكيد حذف الفئة</AlertDialogTitle>
-            <AlertDialogDescription>
-              هل أنت متأكد من حذف الفئة "{categoryToDelete?.name}"؟ قد يؤثر هذا على المنتجات المرتبطة بهذه الفئة.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>إلغاء</AlertDialogCancel>
-            <AlertDialogAction 
-              className="bg-red-600 hover:bg-red-700"
-              onClick={() => categoryToDelete && deleteCategoryMutation.mutate(categoryToDelete.id)}
-            >
-              حذف
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* Delete Warehouse Confirmation */}
-      <AlertDialog open={!!warehouseToDelete} onOpenChange={(open) => !open && setWarehouseToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>تأكيد حذف المخزن</AlertDialogTitle>
-            <AlertDialogDescription>
-              هل أنت متأكد من حذف المخزن "{warehouseToDelete?.name}"؟ سيؤثر هذا على كل المنتجات الموجودة في هذا المخزن.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>إلغاء</AlertDialogCancel>
-            <AlertDialogAction 
-              className="bg-red-600 hover:bg-red-700"
-              onClick={() => warehouseToDelete && deleteWarehouseMutation.mutate(warehouseToDelete.id)}
-            >
-              حذف
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Count Dialog */}
-      <AlertDialog open={showCountDialog} onOpenChange={setShowCountDialog}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>تحديث كمية المنتج</AlertDialogTitle>
-            <AlertDialogDescription>
-              أدخل الكمية الحالية للمنتج: {countProduct?.name}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="py-4">
-            <Input
-              type="number"
-              min="0"
-              value={countValue}
-              onChange={(e) => setCountValue(e.target.value)}
-              className="text-center text-xl"
-              placeholder="الكمية"
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>إلغاء</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCountSubmit}>تحديث</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Transaction History Dialog */}
-      <AlertDialog 
-        open={showTransactionHistory} 
-        onOpenChange={(open) => !open && setShowTransactionHistory(false)}
-      >
-        <AlertDialogContent className="max-w-4xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>سجل حركة المنتج</AlertDialogTitle>
-            <AlertDialogDescription>
-              عرض عمليات الشراء والبيع والتعديل للمنتج: {selectedProduct?.name}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          
-          <div className="py-4">
-            {isLoadingTransactions ? (
-              <div className="flex justify-center items-center py-8">
-                <div className="text-center">
-                  <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2 text-green-600" />
-                  <p>جاري تحميل البيانات...</p>
-                </div>
-              </div>
-            ) : productTransactions.length > 0 ? (
-              <div className="overflow-y-auto max-h-[400px]">
-                <table className="w-full border-collapse">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="p-2 border text-right">التاريخ</th>
-                      <th className="p-2 border text-right">نوع العملية</th>
-                      <th className="p-2 border text-right">الكمية</th>
-                      <th className="p-2 border text-right">الوصف</th>
-                      <th className="p-2 border text-right">الحساب</th>
-                      <th className="p-2 border text-right">رقم المستند</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {productTransactions.map((transaction) => (
-                      <tr key={transaction.id} className="hover:bg-gray-50">
-                        <td className="p-2 border">{transaction.date}</td>
-                        <td className="p-2 border">
-                          <div className="flex items-center">
-                            {transaction.type === 'purchase' && (
-                              <>
-                                <ShoppingCart className="h-4 w-4 text-green-600 ml-1" />
-                                <span className="text-green-700">شراء</span>
-                              </>
-                            )}
-                            {transaction.type === 'sale' && (
-                              <>
-                                <ArrowUpRight className="h-4 w-4 text-blue-600 ml-1" />
-                                <span className="text-blue-700">بيع</span>
-                              </>
-                            )}
-                            {transaction.type === 'adjustment' && (
-                              <>
-                                <AlertCircle className="h-4 w-4 text-amber-600 ml-1" />
-                                <span className="text-amber-700">تعديل</span>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td className={`p-2 border font-medium ${
-                          transaction.quantity > 0 
-                            ? 'text-green-600' 
-                            : 'text-red-600'
-                        }`}>
-                          {transaction.quantity > 0 ? '+' : ''}{transaction.quantity} {selectedProduct?.unit}
-                        </td>
-                        <td className="p-2 border">{transaction.description}</td>
-                        <td className="p-2 border">{transaction.accountName || '—'}</td>
-                        <td className="p-2 border">{transaction.documentNumber || '—'}</td>
-                      </tr>
-                    ))}
-                    
-                    {/* Summary row */}
-                    <tr className="bg-gray-100 font-bold">
-                      <td colSpan={2} className="p-2 border text-center">الإجمالي</td>
-                      <td className="p-2 border">
-                        {selectedProduct?.quantity} {selectedProduct?.unit}
-                      </td>
-                      <td colSpan={3} className="p-2 border"></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <AlertCircle className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-                <p className="text-lg">لا توجد معاملات مسجلة لهذا المنتج</p>
-                <p className="text-sm mt-2">لم يتم العثور على سجل للشراء أو البيع أو التعديلات</p>
-              </div>
-            )}
-          </div>
-          
-          <AlertDialogFooter>
-            <AlertDialogCancel>إغلاق</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

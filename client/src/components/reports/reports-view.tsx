@@ -8,6 +8,7 @@ import { Bar, BarChart as RechartsBarChart, XAxis, YAxis, CartesianGrid, Tooltip
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLocation } from "wouter";
 import { 
   Table, 
   TableBody, 
@@ -37,6 +38,26 @@ export default function ReportsView() {
   });
   const [endDate, setEndDate] = useState(new Date().toISOString().substring(0, 10));
   const [isError, setIsError] = useState(false);
+  const [, navigate] = useLocation();
+  
+  // Function to navigate to specific report pages
+  const navigateToReport = (reportType: string) => {
+    switch(reportType) {
+      case 'sales':
+        navigate('/reports/sales');
+        break;
+      case 'accounts':
+        navigate('/reports/accounts');
+        break;
+      case 'daily':
+        navigate('/reports/daily');
+        break;
+      default:
+        // Just change the report type for other reports
+        setReportType(reportType);
+        break;
+    }
+  };
 
   // Fetch report data
   const { data: reportData = [], isLoading, error, refetch } = useQuery({
@@ -234,13 +255,41 @@ export default function ReportsView() {
         </div>
       </div>
       
-      <Tabs defaultValue="sales" onValueChange={setReportType}>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <Card className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => navigate('/reports/daily')}>
+          <CardContent className="p-6 flex flex-col items-center justify-center space-y-2">
+            <Calendar className="h-10 w-10 text-amber-500" />
+            <h3 className="text-xl font-medium">التقرير اليومي</h3>
+            <p className="text-sm text-muted-foreground text-center">عرض ملخص الحركات اليومية والمبيعات</p>
+          </CardContent>
+        </Card>
+        
+        <Card className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => navigate('/reports/sales')}>
+          <CardContent className="p-6 flex flex-col items-center justify-center space-y-2">
+            <BarChart className="h-10 w-10 text-green-500" />
+            <h3 className="text-xl font-medium">تقرير المبيعات</h3>
+            <p className="text-sm text-muted-foreground text-center">تحليل وعرض بيانات المبيعات</p>
+          </CardContent>
+        </Card>
+        
+        <Card className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => navigate('/reports/accounts')}>
+          <CardContent className="p-6 flex flex-col items-center justify-center space-y-2">
+            <FileText className="h-10 w-10 text-blue-500" />
+            <h3 className="text-xl font-medium">تقرير الحسابات</h3>
+            <p className="text-sm text-muted-foreground text-center">عرض كشوف حساب للعملاء والموردين</p>
+          </CardContent>
+        </Card>
+      </div>
+      
+      <Tabs defaultValue="sales" onValueChange={navigateToReport}>
         <TabsList className="mb-4 flex-wrap">
           <TabsTrigger value="sales">فواتير المبيعات</TabsTrigger>
           <TabsTrigger value="purchases">فواتير المشتريات</TabsTrigger>
           <TabsTrigger value="inventory">حركة المخزون</TabsTrigger>
           <TabsTrigger value="customers">حسابات العملاء</TabsTrigger>
           <TabsTrigger value="suppliers">حسابات الموردين</TabsTrigger>
+          <TabsTrigger value="accounts">الحسابات</TabsTrigger>
+          <TabsTrigger value="daily">اليومية</TabsTrigger>
         </TabsList>
         
         <Card>

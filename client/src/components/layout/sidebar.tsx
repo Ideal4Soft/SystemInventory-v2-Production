@@ -21,6 +21,23 @@ import {
   Clock,
   Truck
 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useTab } from "@/hooks/use-tab";
+
+// Define interfaces for navigation items
+interface NavItem {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  path: string;
+}
+
+interface ReportNavItem extends NavItem {
+  // No additional properties needed now
+}
+
+interface OperationNavItem extends NavItem {
+  action?: string;
+}
 
 interface SidebarProps {
   open: boolean;
@@ -29,6 +46,7 @@ interface SidebarProps {
 
 export default function Sidebar({ open, setOpen }: SidebarProps) {
   const [location] = useLocation();
+  const tabContext = useTab();
   
   // Fetch settings
   const { data: settings } = useQuery({
@@ -52,7 +70,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
     { title: "تقارير", icon: BarChart3, path: "/reports" }
   ];
   
-  // Report navigation items - Removed duplicates
+  // Report navigation items - Fixed paths with proper routes
   const reportNavItems = [
     { title: "تحليل المبيعات", icon: BarChart3, path: "/reports/sales" },
     { title: "الحركة اليومية", icon: Clock, path: "/reports/daily" },
@@ -60,14 +78,14 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
     { title: "استيراد بيانات", icon: Upload, path: "/import" }
   ];
   
-  // Operations navigation items - Removed duplicates and consolidated paths
+  // Operations navigation items - Fixed paths with proper routes
   const operationNavItems = [
-    { title: "جرد مخزن", icon: Package, path: "/inventory/stocktake" },
+    { title: "جرد مخزن", icon: Package, path: "/inventory/count" },
     { title: "مصاريف", icon: DollarSign, path: "/finance/expenses" },
-    { title: "شراء", icon: ShoppingCart, path: "/invoices/purchase/new" },
+    { title: "شراء", icon: ShoppingCart, path: "/purchases/new" },
     { title: "تسوية مخزن", icon: LayoutGrid, path: "/inventory/adjust" },
-    { title: "تحويل لمخزن", icon: ArrowUpDownIcon, path: "/inventory/transfer" },
-    { title: "بيع", icon: Tag, path: "/invoices/sale/new" }
+    { title: "تحويل لمخزن", icon: ArrowUpDownIcon, path: "/inventory", action: "transfer" },
+    { title: "بيع", icon: Tag, path: "/sales/new" }
   ];
   
   // Admin navigation items
@@ -83,11 +101,37 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
       setOpen(false);
     }
   };
+  
+  // Function to handle report links
+  const handleReportClick = (item: ReportNavItem, event: React.MouseEvent) => {
+    event.preventDefault();
+    handleLinkClick();
+    
+    // Add tab for the report
+    tabContext.addTab(item.title, item.path);
+    
+    // Navigate to the report page
+    window.location.href = item.path;
+  };
+  
+  // Function to handle operation links
+  const handleOperationClick = (item: OperationNavItem, event: React.MouseEvent) => {
+    event.preventDefault();
+    handleLinkClick();
+    
+    // Only append action parameter if action is specified
+    const url = item.action ? `${item.path}?action=${item.action}` : item.path;
+    
+    // Add tab for the operation using the hook's addTab function
+    tabContext.addTab(item.title, url);
+    
+    window.location.href = url;
+  };
 
   return (
     <aside className={cn(
       "fixed inset-y-0 right-0 bg-white border-l border-gray-200 transition-all duration-300 overflow-y-auto z-30",
-      open ? "w-64" : "w-0 lg:w-20",
+      open ? "w-72 sm:w-64" : "w-0 lg:w-20",
       "lg:relative lg:translate-x-0"
     )}>
       <div className="p-4 space-y-8">
@@ -99,7 +143,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
         </div>
         
         {/* Main Navigation */}
-        <nav className="space-y-1">
+        <nav className="space-y-2">
           <div className="mb-2 px-2 text-xs font-semibold text-gray-500">
             {open ? "الأقسام الرئيسية" : ""}
           </div>
@@ -113,71 +157,73 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
               <Button
                 variant={location === item.path ? "secondary" : "ghost"}
                 className={cn(
-                  "w-full justify-start",
+                  "w-full justify-start h-12 sm:h-10",
                   location === item.path ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
                 )}
               >
-                <item.icon className={cn("h-5 w-5 ml-2", !open && "mx-auto")} />
-                {open && <span>{item.title}</span>}
+                <item.icon className={cn("h-6 w-6 sm:h-5 sm:w-5 ml-2", !open && "mx-auto")} />
+                {open && <span className="text-base sm:text-sm">{item.title}</span>}
               </Button>
             </Link>
           ))}
         </nav>
         
         {/* Reports */}
-        <div className="space-y-1">
+        <div className="space-y-2">
           <div className="mb-2 px-2 text-xs font-semibold text-gray-500">
             {open ? "التقارير" : ""}
           </div>
           
           {reportNavItems.map((item, index) => (
-            <Link 
+            <a 
               key={index} 
               href={item.path}
-              onClick={handleLinkClick}
+              onClick={(e) => handleReportClick(item, e)}
+              className="block"
             >
               <Button
-                variant={location === item.path ? "secondary" : "ghost"}
+                variant={location.startsWith(item.path) ? "secondary" : "ghost"}
                 className={cn(
-                  "w-full justify-start",
-                  location === item.path ? "bg-blue-500/10 text-blue-600 hover:bg-blue-500/20" : ""
+                  "w-full justify-start h-12 sm:h-10",
+                  location.startsWith(item.path) ? "bg-blue-500/10 text-blue-600 hover:bg-blue-500/20" : ""
                 )}
               >
-                <item.icon className={cn("h-5 w-5 ml-2", !open && "mx-auto")} />
-                {open && <span>{item.title}</span>}
+                <item.icon className={cn("h-6 w-6 sm:h-5 sm:w-5 ml-2", !open && "mx-auto")} />
+                {open && <span className="text-base sm:text-sm">{item.title}</span>}
               </Button>
-            </Link>
+            </a>
           ))}
         </div>
         
         {/* Operations */}
-        <div className="space-y-1">
+        <div className="space-y-2">
           <div className="mb-2 px-2 text-xs font-semibold text-gray-500">
             {open ? "العمليات" : ""}
           </div>
           
           {operationNavItems.map((item, index) => (
-            <Link 
+            <a 
               key={index} 
               href={item.path}
-              onClick={handleLinkClick}
+              onClick={(e) => handleOperationClick(item, e)}
+              className="block"
             >
               <Button
                 variant={location === item.path ? "secondary" : "ghost"}
                 className={cn(
-                  "w-full justify-start",
+                  "w-full justify-start h-12 sm:h-10",
                   location === item.path ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
                 )}
               >
-                <item.icon className={cn("h-5 w-5 ml-2", !open && "mx-auto")} />
-                {open && <span>{item.title}</span>}
+                <item.icon className={cn("h-6 w-6 sm:h-5 sm:w-5 ml-2", !open && "mx-auto")} />
+                {open && <span className="text-base sm:text-sm">{item.title}</span>}
               </Button>
-            </Link>
+            </a>
           ))}
         </div>
         
         {/* Admin */}
-        <div className="space-y-1">
+        <div className="space-y-2">
           <div className="mb-2 px-2 text-xs font-semibold text-gray-500">
             {open ? "الإدارة" : ""}
           </div>
@@ -191,12 +237,12 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
               <Button
                 variant={location === item.path ? "secondary" : "ghost"}
                 className={cn(
-                  "w-full justify-start",
+                  "w-full justify-start h-12 sm:h-10",
                   location === item.path ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
                 )}
               >
-                <item.icon className={cn("h-5 w-5 ml-2", !open && "mx-auto")} />
-                {open && <span>{item.title}</span>}
+                <item.icon className={cn("h-6 w-6 sm:h-5 sm:w-5 ml-2", !open && "mx-auto")} />
+                {open && <span className="text-base sm:text-sm">{item.title}</span>}
               </Button>
             </Link>
           ))}

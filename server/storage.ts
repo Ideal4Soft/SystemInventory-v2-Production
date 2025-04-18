@@ -103,6 +103,9 @@ export interface IStorage {
   countCustomersWithCredit(): Promise<number>;
   getTotalCustomersDebit(): Promise<number>;
   getTotalCustomersCredit(): Promise<number>;
+
+  // Add new method to the interface
+  getNextInvoiceNumber(isPurchase: boolean): Promise<string>;
 }
 
 // Define the statement item type
@@ -990,7 +993,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Add helper method to get next invoice number
-  private async getNextInvoiceNumber(isPurchase: boolean): Promise<string> {
+  async getNextInvoiceNumber(isPurchase: boolean): Promise<string> {
     try {
       // Get the last invoice number based on type
       const lastInvoice = await db
@@ -999,7 +1002,7 @@ export class DatabaseStorage implements IStorage {
         .where(
           isPurchase 
             ? sql`${invoices.invoiceNumber} LIKE 'PUR-%'`
-            : sql`${invoices.invoiceNumber} NOT LIKE 'PUR-%'`
+            : sql`${invoices.invoiceNumber} LIKE 'INV-%'`
         )
         .orderBy(desc(invoices.id))
         .limit(1);

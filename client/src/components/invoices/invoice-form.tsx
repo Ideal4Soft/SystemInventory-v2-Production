@@ -132,6 +132,16 @@ export default function InvoiceForm({ isOpen, onClose, invoiceToEdit, invoiceTyp
   const [productSearchTerm, setProductSearchTerm] = useState("");
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
 
+  // Fetch next invoice number
+  const { data: nextInvoiceNumber, isLoading: isLoadingNextNumber } = useQuery({
+    queryKey: ['/api/next-invoice-number', invoiceType],
+    queryFn: async () => {
+      return apiRequest(`/api/next-invoice-number?type=${invoiceType === 'sales' ? 'sales' : 'purchase'}`, "GET");
+    },
+    // Only fetch when creating a new invoice, not when editing
+    enabled: !invoiceToEdit,
+  });
+
   // Fetch customers/suppliers for dropdown
   const { data: accounts = [] } = useQuery({
     queryKey: ['/api/accounts', invoiceType === 'sales' ? 'customer' : 'supplier'],
@@ -157,7 +167,7 @@ export default function InvoiceForm({ isOpen, onClose, invoiceToEdit, invoiceTyp
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema),
     defaultValues: {
-      invoiceNumber: `${invoiceType === 'sales' ? 'INV' : 'PUR'}-${Math.floor(1000 + Math.random() * 9000)}`,
+      invoiceNumber: "",
       date: new Date().toISOString().substring(0, 10),
       dueDate: new Date().toISOString().substring(0, 10), // Set dueDate to today by default
       status: "draft", // default status: draft for sales invoices
@@ -166,6 +176,16 @@ export default function InvoiceForm({ isOpen, onClose, invoiceToEdit, invoiceTyp
       invoiceType: invoiceType, // Initialize with the prop value
     },
   });
+
+  // Set default invoice number when it's available from the API
+  useEffect(() => {
+    if (nextInvoiceNumber && !invoiceToEdit) {
+      form.setValue('invoiceNumber', nextInvoiceNumber.number);
+    } else if (!invoiceToEdit) {
+      // Fallback if API fails - use random number as before
+      form.setValue('invoiceNumber', `${invoiceType === 'sales' ? 'INV' : 'PUR'}-${Math.floor(1000 + Math.random() * 9000)}`);
+    }
+  }, [nextInvoiceNumber, form, invoiceType, invoiceToEdit]);
 
   // Set default warehouse when warehouses are loaded
   useEffect(() => {
@@ -470,8 +490,13 @@ export default function InvoiceForm({ isOpen, onClose, invoiceToEdit, invoiceTyp
   // Get errors setter from form
   const { formState: { errors }, setError } = form;
 
-  // Helper function to generate invoice number
+  // Helper function to generate invoice number - now just a fallback
   const generateInvoiceNumber = () => {
+    // Try to use the nextInvoiceNumber from the API if available
+    if (nextInvoiceNumber && nextInvoiceNumber.number) {
+      return nextInvoiceNumber.number;
+    }
+    // Fallback to random number
     const prefix = invoiceType === 'sales' ? 'INV' : 'PUR';
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     return `${prefix}-${randomNum}`;

@@ -30,6 +30,14 @@ import MainLayout from "./components/layout/main-layout";
 import InvoiceForm from "./components/invoices/invoice-form";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "./lib/queryClient";
+import InventoryAdjustPage from "./pages/inventory/adjust";
+import InventoryCountPage from "./pages/inventory/count";
+import ExpensesPage from "./pages/finance/expenses";
+import NewSalesPage from "./pages/sales/new";
+import ImportView from "./components/import/import-view";
+import AccountsReportPage from "./pages/reports/accounts";
+import DailyReportPage from "./pages/reports/daily";
+import SalesReportPage from "./pages/reports/sales";
 
 function App() {
   const { setUser, setAuthenticated } = useAppContext();
@@ -87,16 +95,20 @@ function App() {
   );
 
   // View/Edit Invoice route component
-  const ViewInvoicePage = (params: { id: string }) => (
-    <div className="p-4">
-      <InvoiceForm 
-        isOpen={true} 
-        onClose={() => navigate('/invoices')}
-        invoiceToEdit={{ id: parseInt(params.id) }}
-        invoiceType="sales" 
-      />
-    </div>
-  );
+  const ViewInvoicePage = (props: any) => {
+    const id = props.params?.id;
+    
+    return (
+      <div className="p-4">
+        <InvoiceForm 
+          isOpen={true} 
+          onClose={() => navigate('/invoices')}
+          invoiceToEdit={{ id: parseInt(id) }}
+          invoiceType="sales" 
+        />
+      </div>
+    );
+  };
 
   // Determine if we should show separate purchases view
   const showPurchasesView = settings?.combinePurchaseViews === false;
@@ -115,9 +127,17 @@ function App() {
           {showPurchasesView && <Route path="/purchases" component={PurchasesView} />}
           <Route path="/finance" component={FinanceView} />
           <Route path="/reports" component={ReportsView} />
+          <Route path="/reports/accounts" component={AccountsReportPage} />
+          <Route path="/reports/daily" component={DailyReportPage} />
+          <Route path="/reports/sales" component={SalesReportPage} />
           <Route path="/settings" component={SettingsView} />
           <Route path="/backup" component={BackupView} />
           <Route path="/restore" component={RestoreView} />
+          <Route path="/import" component={ImportView} />
+          <Route path="/inventory/adjust" component={InventoryAdjustPage} />
+          <Route path="/inventory/count" component={InventoryCountPage} />
+          <Route path="/finance/expenses" component={ExpensesPage} />
+          <Route path="/sales/new" component={NewSalesPage} />
           <Route component={NotFound} />
         </Switch>
       </MainLayout>
