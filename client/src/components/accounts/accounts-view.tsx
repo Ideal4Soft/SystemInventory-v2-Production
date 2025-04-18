@@ -306,34 +306,73 @@ export default function AccountsView() {
   };
   
   // Handle file change for import
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       // Process Excel file
-      setExcelData([]); // Replace with actual Excel processing
-      setOpenConfirmImport(true);
+      try {
+        setImportLoading(true);
+        const importedData = await importFromExcel<ExcelAccount>(file);
+        
+        // Process the data to match the API format
+        const processedData = importedData.map(item => ({
+          code: item.الكود || '',
+          name: item.الاسم || '',
+          type: item.النوع === 'عميل' ? 'customer' : 
+                item.النوع === 'مورد' ? 'supplier' : 
+                item.النوع === 'مصروف' ? 'expense' : 
+                item.النوع === 'إيراد' ? 'income' : 'customer',
+          address: item.العنوان || '',
+          phone: item.الهاتف || '',
+          openingBalance: item['الرصيد الافتتاحي'] || 0,
+          notes: item.ملاحظات || ''
+        }));
+        
+        setExcelData(processedData);
+        setOpenConfirmImport(true);
+      } catch (error) {
+        console.error('Error importing Excel file:', error);
+        toast({
+          title: "خطأ في قراءة الملف",
+          description: "فشل قراءة ملف Excel. تأكد من أن الملف بالتنسيق الصحيح.",
+          variant: "destructive",
+        });
+      } finally {
+        setImportLoading(false);
+      }
     }
-  };
-  
-  // Handle import button click
-  const handleImportButtonClick = () => {
-    fileInputRef.current?.click();
   };
   
   // Confirm import
   const confirmImport = async () => {
     setImportLoading(true);
     try {
-      // Import logic here
+      if (!excelData || excelData.length === 0) {
+        throw new Error("لا توجد بيانات للاستيراد");
+      }
+      
+      // Create accounts individually instead of using batch endpoint
+      let successCount = 0;
+      for (const account of excelData) {
+        try {
+          // Call API to create each account individually
+          await apiRequest('/api/accounts', 'POST', account);
+          successCount++;
+        } catch (error) {
+          console.error('Error importing account:', account, error);
+        }
+      }
+      
       toast({
         title: "تم الاستيراد بنجاح",
-        description: `تم استيراد ${excelData?.length} حسابات بنجاح`,
+        description: `تم استيراد ${successCount} من ${excelData.length} حسابات بنجاح`,
       });
       refetch();
     } catch (error) {
+      console.error('Error importing accounts:', error);
       toast({
         title: "حدث خطأ",
-        description: "فشل استيراد البيانات",
+        description: error instanceof Error ? error.message : "فشل استيراد البيانات",
         variant: "destructive",
       });
     } finally {
@@ -361,7 +400,20 @@ export default function AccountsView() {
   
   // Download Excel template
   const downloadExcelTemplate = () => {
-    // Template download logic here
+    try {
+      getExcelTemplate('accounts');
+      toast({
+        title: "تم تحميل القالب",
+        description: "تم تحميل قالب Excel بنجاح",
+      });
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      toast({
+        title: "خطأ في تحميل القالب",
+        description: "فشل تحميل قالب Excel",
+        variant: "destructive",
+      });
+    }
   };
   
   // Function to determine if balance is debit based on account type
@@ -407,6 +459,11 @@ export default function AccountsView() {
         {typeInfo.label}
       </span>
     );
+  };
+
+  // Handle import button click
+  const handleImportButtonClick = () => {
+    fileInputRef.current?.click();
   };
 
   return (

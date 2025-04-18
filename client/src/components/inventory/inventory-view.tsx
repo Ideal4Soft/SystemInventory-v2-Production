@@ -531,7 +531,20 @@ export default function InventoryView() {
   
   // Handle template download
   const handleDownloadTemplate = () => {
-    getExcelTemplate('products');
+    try {
+      getExcelTemplate('products');
+      toast({
+        title: "تم تحميل القالب",
+        description: "تم تحميل قالب Excel بنجاح",
+      });
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      toast({
+        title: "خطأ في تحميل القالب",
+        description: "فشل تحميل قالب Excel",
+        variant: "destructive",
+      });
+    }
   };
 
   // Fetch product transactions

@@ -502,7 +502,20 @@ export default function FinanceView() {
   
   // Handle template download
   const handleDownloadTemplate = () => {
-    getExcelTemplate('transactions');
+    try {
+      getExcelTemplate('transactions');
+      toast({
+        title: "تم تحميل القالب",
+        description: "تم تحميل قالب Excel بنجاح",
+      });
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      toast({
+        title: "خطأ في تحميل القالب",
+        description: "فشل تحميل قالب Excel",
+        variant: "destructive",
+      });
+    }
   };
 
   // Helper functions

@@ -451,7 +451,20 @@ export default function InvoicesView() {
   
   // Handle template download
   const handleDownloadTemplate = () => {
-    getExcelTemplate('invoices');
+    try {
+      getExcelTemplate('invoices');
+      toast({
+        title: "تم تحميل القالب",
+        description: "تم تحميل قالب Excel بنجاح",
+      });
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      toast({
+        title: "خطأ في تحميل القالب",
+        description: "فشل تحميل قالب Excel",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

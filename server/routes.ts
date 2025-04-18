@@ -71,6 +71,8 @@ import {
   mockInvoices,
   mockSettings
 } from "./mockdb";
+import path from 'path';
+import fs from 'fs';
 
 // Mock invoice implementation for development
 const createMockInvoice = (data: any) => ({...data, id: Math.floor(Math.random() * 1000)});
@@ -2449,27 +2451,232 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Backup route
   app.post("/api/backup", async (req, res) => {
     try {
-      const { backupPath } = req.body;
+      const { backupPath, sendEmail } = req.body;
       
       if (!backupPath) {
         return res.status(400).json({ message: "Backup path is required" });
       }
       
-      // In a real implementation, we would create a database backup file
-      // and store it at the specified path.
-      // For this example, we'll simulate a successful backup operation
+      console.log("Creating database backup to path:", backupPath);
       
-      // Simulate backup process delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Normalize the backup path (replace forward slashes with backslashes on Windows)
+      let normalizedBackupPath = backupPath;
+      if (process.platform === 'win32') {
+        normalizedBackupPath = backupPath.replace(/\//g, '\\');
+      }
       
+      // Generate timestamp for the backup file
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const backupFileName = `backup_${timestamp}.sql`;
+      let backupFilePath;
+      
+      try {
+        // Try using the requested path first
+        console.log(`Attempting to use directory: ${normalizedBackupPath}`);
+        
+        // Check if directory exists, create it if it doesn't
+        if (!fs.existsSync(normalizedBackupPath)) {
+          console.log(`Directory doesn't exist, creating: ${normalizedBackupPath}`);
+          fs.mkdirSync(normalizedBackupPath, { recursive: true });
+          console.log(`Created backup directory: ${normalizedBackupPath}`);
+        }
+        
+        backupFilePath = path.join(normalizedBackupPath, backupFileName);
+      } catch (dirError) {
+        console.error(`Error with requested directory: ${dirError.message}`);
+        
+        // Fall back to a default backup location in the app directory
+        const defaultBackupDir = path.join(process.cwd(), 'backups');
+        console.log(`Falling back to default directory: ${defaultBackupDir}`);
+        
+        if (!fs.existsSync(defaultBackupDir)) {
+          fs.mkdirSync(defaultBackupDir, { recursive: true });
+        }
+        
+        backupFilePath = path.join(defaultBackupDir, backupFileName);
+        console.log(`Using fallback backup path: ${backupFilePath}`);
+      }
+      
+      // Create a backup file 
+      if (usingMockData) {
+        console.log("Using mock database, creating JSON backup");
+        
+        try {
+          // Get all tables data from the mock database
+          const tablesData = {
+            accounts: mockData.accounts || [],
+            categories: mockData.categories || [],
+            products: mockData.products || [],
+            warehouses: mockData.warehouses || [],
+            inventory: mockData.inventory || [],
+            transactions: mockData.transactions || [],
+            inventoryTransactions: mockData.inventoryTransactions || [],
+            invoices: mockData.invoices || [],
+            invoiceDetails: mockData.invoiceDetails || [],
+            purchases: mockData.purchases || [],
+            purchaseDetails: mockData.purchaseDetails || [],
+            users: mockData.users || [],
+            settings: mockData.settings || []
+          };
+          
+          // Write the data to the backup file
+          fs.writeFileSync(backupFilePath, JSON.stringify(tablesData, null, 2));
+          console.log(`Mock data backup created at: ${backupFilePath}`);
+        } catch (err) {
+          console.error("Error creating mock data backup:", err);
+          throw new Error(`Failed to create mock data backup: ${err.message}`);
+        }
+      } else {
+        // Execute pg_dump command
+        console.log("Using real database, attempting to run pg_dump");
+        
+        try {
+          // Extract connection details from DATABASE_URL
+          const dbUrl = new URL(config.DATABASE_URL);
+          const dbName = dbUrl.pathname.substring(1);
+          const dbUser = dbUrl.username;
+          const dbPassword = dbUrl.password;
+          const dbHost = dbUrl.hostname;
+          const dbPort = dbUrl.port || '5432';
+          
+          // Create a pg-dump process
+          const isWindows = process.platform === 'win32';
+          let pgDumpCommand = '';
+          
+          if (isWindows) {
+            // Windows command (using pg_dump from PostgreSQL bin directory)
+            pgDumpCommand = `set PGPASSWORD=${dbPassword} && pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -F p -b -v -f "${backupFilePath}" ${dbName}`;
+          } else {
+            // Unix command
+            pgDumpCommand = `PGPASSWORD=${dbPassword} pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -F p -b -v -f "${backupFilePath}" ${dbName}`;
+          }
+          
+          const { execSync } = require('child_process');
+          execSync(pgDumpCommand);
+          console.log(`Database backup created at: ${backupFilePath}`);
+        } catch (err) {
+          console.error("Error executing pg_dump:", err);
+          
+          // Fall back to creating an empty file with error message
+          try {
+            fs.writeFileSync(backupFilePath, `Error creating database backup: ${err.message}\n\nPlease ensure PostgreSQL is installed and pg_dump is available.`);
+            console.log(`Created error log file at: ${backupFilePath}`);
+          } catch (writeErr) {
+            console.error("Error creating error log file:", writeErr);
+            throw new Error(`Failed to create backup and error log: ${writeErr.message}`);
+          }
+        }
+      }
+      
+      // Send email with backup if requested
+      if (sendEmail) {
+        console.log("Sending backup via email");
+        
+        const nodemailer = require('nodemailer');
+        
+        // Create transport
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: 'zeroten010.2025@gmail.com',
+            pass: 'gtfo anck mwnd boku'
+          }
+        });
+        
+        // Setup email options
+        const mailOptions = {
+          from: 'zeroten010.2025@gmail.com',
+          to: sendEmail, // recipient email address
+          subject: `System Database Backup - ${new Date().toLocaleDateString()}`,
+          text: `Please find attached the database backup created on ${new Date().toLocaleString()}.`,
+          attachments: [
+            {
+              filename: backupFileName,
+              path: backupFilePath
+            }
+          ]
+        };
+        
+        // Send email
+        try {
+          await transporter.sendMail(mailOptions);
+          console.log(`Backup email sent to: ${sendEmail}`);
+        } catch (err) {
+          console.error("Error sending email:", err);
+          // Don't throw error here, just log it, as the backup itself was created successfully
+        }
+      }
+      
+      // Return success response with file path for download
       res.status(200).json({ 
         success: true, 
         message: "Backup created successfully",
-        backupFile: `${backupPath}/backup_${new Date().toISOString().replace(/[:.]/g, "-")}.sql` 
+        backupFile: backupFilePath 
       });
     } catch (error) {
       console.error("Error creating backup:", error);
-      res.status(500).json({ message: "Error creating backup" });
+      res.status(500).json({ message: `Error creating backup: ${error.message}` });
+    }
+  });
+  
+  // Endpoint to download backup file
+  app.get("/api/backup/download", (req, res) => {
+    try {
+      const { filePath } = req.query;
+      
+      if (!filePath) {
+        return res.status(400).json({ message: "File path is required" });
+      }
+      
+      console.log(`Download request received for file: ${filePath}`);
+      
+      // Normalize file path - handle URL encoding and slashes
+      let normalizedPath = decodeURIComponent(filePath as string);
+      if (process.platform === 'win32') {
+        normalizedPath = normalizedPath.replace(/\//g, '\\');
+      }
+      
+      console.log(`Normalized path: ${normalizedPath}`);
+      
+      // Check if the file exists
+      if (!fs.existsSync(normalizedPath)) {
+        console.error(`Backup file not found at path: ${normalizedPath}`);
+        return res.status(404).json({ message: "Backup file not found" });
+      }
+      
+      console.log(`Preparing download for backup file: ${normalizedPath}`);
+      
+      // Get file stats
+      const stats = fs.statSync(normalizedPath);
+      
+      if (!stats.isFile()) {
+        console.error(`Path exists but is not a file: ${normalizedPath}`);
+        return res.status(400).json({ message: "The specified path is not a file" });
+      }
+      
+      // Set headers for file download
+      const filename = path.basename(normalizedPath);
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', stats.size);
+      
+      // Stream the file to the response
+      const fileStream = fs.createReadStream(normalizedPath);
+      
+      fileStream.on('error', (err) => {
+        console.error(`Error streaming file: ${err}`);
+        if (!res.headersSent) {
+          res.status(500).json({ message: "Error streaming file" });
+        }
+        res.end();
+      });
+      
+      fileStream.pipe(res);
+      
+      console.log(`File download started for: ${filename}`);
+    } catch (error) {
+      console.error("Error downloading backup:", error);
+      res.status(500).json({ message: `Error downloading backup file: ${error.message}` });
     }
   });
   
@@ -2486,11 +2693,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "At least one restore option must be selected" });
       }
       
-      // In a real implementation, we would restore the database from the backup file
-      // For this example, we'll simulate a successful restore operation
+      // Check if the file exists
+      if (!fs.existsSync(backupFile)) {
+        return res.status(404).json({ message: "Backup file not found" });
+      }
       
-      // Simulate restore process delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log(`Restoring database from backup: ${backupFile}`);
+      
+      // Check if it's a JSON file (mock data) or SQL file
+      const isJsonBackup = backupFile.toLowerCase().endsWith('.json');
+      
+      if (isJsonBackup || usingMockData) {
+        console.log("Restoring from JSON backup or to mock database");
+        
+        try {
+          // Read the backup file
+          const backupData = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
+          
+          // Restore mock data
+          if (restoreData) {
+            mockData = { ...mockData, ...backupData };
+            console.log("Mock data restored from backup");
+          }
+          
+          // Save the updated mock data to file
+          fs.writeFileSync(path.join(process.cwd(), 'mock-data.json'), JSON.stringify(mockData, null, 2));
+          console.log("Updated mock data saved to file");
+        } catch (err) {
+          console.error("Error restoring from JSON backup:", err);
+          throw new Error("Failed to restore from JSON backup");
+        }
+      } else {
+        // Restore from SQL backup
+        console.log("Restoring from SQL backup");
+        
+        // Extract connection details from DATABASE_URL
+        const dbUrl = new URL(config.DATABASE_URL);
+        const dbName = dbUrl.pathname.substring(1);
+        const dbUser = dbUrl.username;
+        const dbPassword = dbUrl.password;
+        const dbHost = dbUrl.hostname;
+        const dbPort = dbUrl.port || '5432';
+        
+        // Check if we're using Windows or Unix-like system
+        const isWindows = process.platform === 'win32';
+        
+        let restoreCommand = '';
+        
+        if (isWindows) {
+          // Windows command
+          restoreCommand = `set PGPASSWORD=${dbPassword} && psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} -f "${backupFile}"`;
+        } else {
+          // Unix command
+          restoreCommand = `PGPASSWORD=${dbPassword} psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} -f "${backupFile}"`;
+        }
+        
+        console.log("Executing restore command:", restoreCommand);
+        const { execSync } = require('child_process');
+        
+        try {
+          execSync(restoreCommand);
+          console.log("Database restored successfully");
+        } catch (err) {
+          console.error("Error executing restore command:", err);
+          throw new Error("Failed to execute restore command");
+        }
+      }
+      
+      // Clear cache after restore
+      clearCache();
       
       res.status(200).json({ 
         success: true, 
@@ -2502,7 +2773,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error restoring database:", error);
-      res.status(500).json({ message: "Error restoring database" });
+      res.status(500).json({ message: `Error restoring database: ${error.message}` });
     }
   });
 
@@ -3481,6 +3752,1216 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating invoice status:", error);
       res.status(500).json({ message: "Error updating invoice status" });
+    }
+  });
+
+  app.delete("/api/invoices/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid invoice ID" });
+      }
+      const result = await storage.deleteInvoice(id);
+      if (!result) {
+        return res.status(404).json({ message: "Invoice not found or could not be deleted" });
+      }
+      res.json({ message: "Invoice deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting invoice:", error);
+      res.status(500).json({ message: "Error deleting invoice" });
+    }
+  });
+
+  // Purchase routes
+  app.post("/api/purchases", async (req, res) => {
+    try {
+      const { purchase, details } = req.body;
+      if (!purchase || !details || !Array.isArray(details)) {
+        return res.status(400).json({ message: "Purchase and details array are required" });
+      }
+
+      const purchaseData = insertPurchaseSchema.parse(purchase);
+      // Validate each detail item
+      for (const detail of details) {
+        if (!detail.productId || !detail.quantity || !detail.unitPrice || !detail.total) {
+          return res.status(400).json({ message: "Each detail must include productId, quantity, unitPrice, and total" });
+        }
+      }
+
+      const newPurchase = await storage.createPurchase(purchaseData, details);
+      res.status(201).json(newPurchase);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: fromZodError(error).message });
+      } else {
+        console.error("Error creating purchase:", error);
+        res.status(500).json({ message: "Error creating purchase" });
+      }
+    }
+  });
+
+  app.get("/api/purchases", async (req, res) => {
+    try {
+      const { accountId, startDate, endDate } = req.query;
+      let accountIdNumber: number | undefined;
+      let startDateTime: Date | undefined;
+      let endDateTime: Date | undefined;
+
+      if (accountId) {
+        accountIdNumber = parseInt(accountId as string);
+        if (isNaN(accountIdNumber)) {
+          return res.status(400).json({ message: "Invalid account ID" });
+        }
+      }
+
+      if (startDate) {
+        startDateTime = new Date(startDate as string);
+        if (isNaN(startDateTime.getTime())) {
+          return res.status(400).json({ message: "Invalid start date" });
+        }
+      }
+
+      if (endDate) {
+        endDateTime = new Date(endDate as string);
+        if (isNaN(endDateTime.getTime())) {
+          return res.status(400).json({ message: "Invalid end date" });
+        }
+      }
+
+      const purchases = await storage.listPurchases(accountIdNumber, startDateTime, endDateTime);
+      res.json(purchases);
+    } catch (error) {
+      console.error("Error fetching purchases:", error);
+      res.status(500).json({ message: "Error fetching purchases" });
+    }
+  });
+
+  app.get("/api/purchases/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase ID" });
+      }
+      const purchase = await storage.getPurchase(id);
+      if (!purchase) {
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+      res.json(purchase);
+    } catch (error) {
+      console.error("Error fetching purchase:", error);
+      res.status(500).json({ message: "Error fetching purchase" });
+    }
+  });
+
+  app.patch("/api/purchases/:id/status", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase ID" });
+      }
+      const { status } = req.body;
+      if (!status) {
+        return res.status(400).json({ message: "Status is required" });
+      }
+      const purchase = await storage.updatePurchaseStatus(id, status);
+      if (!purchase) {
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+      res.json(purchase);
+    } catch (error) {
+      console.error("Error updating purchase status:", error);
+      res.status(500).json({ message: "Error updating purchase status" });
+    }
+  });
+
+  app.delete("/api/purchases/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid purchase ID" });
+      }
+      const result = await storage.deletePurchase(id);
+      if (!result) {
+        return res.status(404).json({ message: "Purchase not found or could not be deleted" });
+      }
+      res.json({ message: "Purchase deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting purchase:", error);
+      res.status(500).json({ message: "Error deleting purchase" });
+    }
+  });
+
+  // Settings routes
+  app.get("/api/settings", async (req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      res.json(settings || {});
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      res.status(500).json({ message: "Error fetching settings" });
+    }
+  });
+
+  app.put("/api/settings", async (req, res) => {
+    try {
+      const data = insertSettingsSchema.partial().parse(req.body);
+      const settings = await storage.updateSettings(data);
+      res.json(settings);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: fromZodError(error).message });
+      } else {
+        console.error("Error updating settings:", error);
+        res.status(500).json({ message: "Error updating settings" });
+      }
+    }
+  });
+
+  // Initialize default settings if not exist
+  try {
+    const settings = await storage.getSettings();
+    if (!settings) {
+      await storage.updateSettings({
+        companyName: "شركة الريادي لتوزيع المواد الغذائية",
+        address: "١٤ شارع نور مصر سالم",
+        phone: "01006779000",
+        currency: "EGP",
+        currencySymbol: "ج.م",
+      });
+      console.log("Created default settings");
+    }
+  } catch (error) {
+    console.error("Error checking/creating settings:", error);
+  }
+
+  // Initialize default warehouse if not exist
+  try {
+    const warehouses = await storage.listWarehouses();
+    if (warehouses.length === 0) {
+      await storage.createWarehouse({
+        name: "المخزن الرئيسي",
+        isDefault: true
+      });
+      console.log("Created default warehouse");
+    }
+  } catch (error) {
+    console.error("Error checking/creating default warehouse:", error);
+  }
+
+  // Backup route
+  app.post("/api/backup", async (req, res) => {
+    try {
+      const { backupPath, sendEmail } = req.body;
+      
+      if (!backupPath) {
+        return res.status(400).json({ message: "Backup path is required" });
+      }
+      
+      console.log("Creating database backup to path:", backupPath);
+      
+      // Normalize the backup path (replace forward slashes with backslashes on Windows)
+      let normalizedBackupPath = backupPath;
+      if (process.platform === 'win32') {
+        normalizedBackupPath = backupPath.replace(/\//g, '\\');
+      }
+      
+      // Generate timestamp for the backup file
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const backupFileName = `backup_${timestamp}.sql`;
+      const backupFilePath = path.join(normalizedBackupPath, backupFileName);
+      
+      // Ensure the backup directory exists
+      try {
+        fs.mkdirSync(normalizedBackupPath, { recursive: true });
+        console.log(`Ensured backup directory exists: ${normalizedBackupPath}`);
+      } catch (dirError) {
+        console.error(`Error creating backup directory: ${dirError.message}`);
+        throw new Error(`Failed to create backup directory: ${dirError.message}`);
+      }
+      
+      // Create the default backup directory as well for future use
+      const defaultBackupDir = path.join(process.cwd(), 'backups');
+      try {
+        if (!fs.existsSync(defaultBackupDir)) {
+          fs.mkdirSync(defaultBackupDir, { recursive: true });
+          console.log(`Created default backup directory: ${defaultBackupDir}`);
+        }
+      } catch (defDirError) {
+        console.error(`Error creating default backup directory: ${defDirError.message}`);
+        // Non-fatal error, continue with the backup process
+      }
+      
+      // Create writable stream for the backup file
+      const backupFileStream = fs.createWriteStream(backupFilePath);
+      
+      // Create a pg-dump process
+      let pgDumpCommand = '';
+      
+      // Extract connection details from DATABASE_URL
+      const dbUrl = new URL(config.DATABASE_URL);
+      const dbName = dbUrl.pathname.substring(1);
+      const dbUser = dbUrl.username;
+      const dbPassword = dbUrl.password;
+      const dbHost = dbUrl.hostname;
+      const dbPort = dbUrl.port || '5432';
+      
+      // Check if we're using Windows or Unix-like system
+      const isWindows = process.platform === 'win32';
+      
+      if (isWindows) {
+        // Windows command (using pg_dump from PostgreSQL bin directory)
+        pgDumpCommand = `set PGPASSWORD=${dbPassword} && pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -F p -b -v -f "${backupFilePath}" ${dbName}`;
+      } else {
+        // Unix command
+        pgDumpCommand = `PGPASSWORD=${dbPassword} pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -F p -b -v -f "${backupFilePath}" ${dbName}`;
+      }
+      
+      // If using mock data, create a JSON dump instead of running pg_dump
+      if (usingMockData) {
+        console.log("Using mock database, creating JSON backup instead of SQL dump");
+        
+        try {
+          // Get all tables data from the mock database
+          const tablesData = {
+            accounts: mockData.accounts || [],
+            categories: mockData.categories || [],
+            products: mockData.products || [],
+            warehouses: mockData.warehouses || [],
+            inventory: mockData.inventory || [],
+            transactions: mockData.transactions || [],
+            inventoryTransactions: mockData.inventoryTransactions || [],
+            invoices: mockData.invoices || [],
+            invoiceDetails: mockData.invoiceDetails || [],
+            purchases: mockData.purchases || [],
+            purchaseDetails: mockData.purchaseDetails || [],
+            users: mockData.users || [],
+            settings: mockData.settings || []
+          };
+          
+          // Write the data to the backup file
+          fs.writeFileSync(backupFilePath, JSON.stringify(tablesData, null, 2));
+          console.log(`Mock data backup created at: ${backupFilePath}`);
+        } catch (err) {
+          console.error("Error creating mock data backup:", err);
+          throw new Error("Failed to create mock data backup");
+        }
+      } else {
+        // Execute pg_dump command
+        console.log("Executing pg_dump command:", pgDumpCommand);
+        const { execSync } = require('child_process');
+        
+        try {
+          execSync(pgDumpCommand);
+          console.log(`Database backup created at: ${backupFilePath}`);
+        } catch (err) {
+          console.error("Error executing pg_dump:", err);
+          throw new Error("Failed to execute pg_dump command");
+        }
+      }
+      
+      // Send email with backup if requested
+      if (sendEmail) {
+        console.log("Sending backup via email");
+        
+        const nodemailer = require('nodemailer');
+        
+        // Create transport
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: 'zeroten010.2025@gmail.com',
+            pass: 'gtfo anck mwnd boku'
+          }
+        });
+        
+        // Setup email options
+        const mailOptions = {
+          from: 'zeroten010.2025@gmail.com',
+          to: sendEmail, // recipient email address
+          subject: `System Database Backup - ${new Date().toLocaleDateString()}`,
+          text: `Please find attached the database backup created on ${new Date().toLocaleString()}.`,
+          attachments: [
+            {
+              filename: backupFileName,
+              path: backupFilePath
+            }
+          ]
+        };
+        
+        // Send email
+        try {
+          await transporter.sendMail(mailOptions);
+          console.log(`Backup email sent to: ${sendEmail}`);
+        } catch (err) {
+          console.error("Error sending email:", err);
+          // Don't throw error here, just log it, as the backup itself was created successfully
+        }
+      }
+      
+      // Return success response with file path for download
+      res.status(200).json({ 
+        success: true, 
+        message: "Backup created successfully",
+        backupFile: backupFilePath 
+      });
+    } catch (error) {
+      console.error("Error creating backup:", error);
+      res.status(500).json({ message: `Error creating backup: ${error.message}` });
+    }
+  });
+  
+  // Endpoint to download backup file
+  app.get("/api/backup/download", (req, res) => {
+    try {
+      const { filePath } = req.query;
+      
+      if (!filePath) {
+        return res.status(400).json({ message: "File path is required" });
+      }
+      
+      console.log(`Download request received for file: ${filePath}`);
+      
+      // Normalize file path - handle URL encoding and slashes
+      let normalizedPath = decodeURIComponent(filePath as string);
+      if (process.platform === 'win32') {
+        normalizedPath = normalizedPath.replace(/\//g, '\\');
+      }
+      
+      console.log(`Normalized path: ${normalizedPath}`);
+      
+      // Check if the file exists
+      if (!fs.existsSync(normalizedPath)) {
+        console.error(`Backup file not found at path: ${normalizedPath}`);
+        return res.status(404).json({ message: "Backup file not found" });
+      }
+      
+      console.log(`Preparing download for backup file: ${normalizedPath}`);
+      
+      // Get file stats
+      const stats = fs.statSync(normalizedPath);
+      
+      if (!stats.isFile()) {
+        console.error(`Path exists but is not a file: ${normalizedPath}`);
+        return res.status(400).json({ message: "The specified path is not a file" });
+      }
+      
+      // Set headers for file download
+      const filename = path.basename(normalizedPath);
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', stats.size);
+      
+      // Stream the file to the response
+      const fileStream = fs.createReadStream(normalizedPath);
+      
+      fileStream.on('error', (err) => {
+        console.error(`Error streaming file: ${err}`);
+        if (!res.headersSent) {
+          res.status(500).json({ message: "Error streaming file" });
+        }
+        res.end();
+      });
+      
+      fileStream.pipe(res);
+      
+      console.log(`File download started for: ${filename}`);
+    } catch (error) {
+      console.error("Error downloading backup:", error);
+      res.status(500).json({ message: `Error downloading backup file: ${error.message}` });
+    }
+  });
+  
+  // Restore route
+  app.post("/api/restore", async (req, res) => {
+    try {
+      const { backupFile, restoreData, restoreTemplates } = req.body;
+      
+      if (!backupFile) {
+        return res.status(400).json({ message: "Backup file path is required" });
+      }
+      
+      if (!restoreData && !restoreTemplates) {
+        return res.status(400).json({ message: "At least one restore option must be selected" });
+      }
+      
+      // Check if the file exists
+      if (!fs.existsSync(backupFile)) {
+        return res.status(404).json({ message: "Backup file not found" });
+      }
+      
+      console.log(`Restoring database from backup: ${backupFile}`);
+      
+      // Check if it's a JSON file (mock data) or SQL file
+      const isJsonBackup = backupFile.toLowerCase().endsWith('.json');
+      
+      if (isJsonBackup || usingMockData) {
+        console.log("Restoring from JSON backup or to mock database");
+        
+        try {
+          // Read the backup file
+          const backupData = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
+          
+          // Restore mock data
+          if (restoreData) {
+            mockData = { ...mockData, ...backupData };
+            console.log("Mock data restored from backup");
+          }
+          
+          // Save the updated mock data to file
+          fs.writeFileSync(path.join(process.cwd(), 'mock-data.json'), JSON.stringify(mockData, null, 2));
+          console.log("Updated mock data saved to file");
+        } catch (err) {
+          console.error("Error restoring from JSON backup:", err);
+          throw new Error("Failed to restore from JSON backup");
+        }
+      } else {
+        // Restore from SQL backup
+        console.log("Restoring from SQL backup");
+        
+        // Extract connection details from DATABASE_URL
+        const dbUrl = new URL(config.DATABASE_URL);
+        const dbName = dbUrl.pathname.substring(1);
+        const dbUser = dbUrl.username;
+        const dbPassword = dbUrl.password;
+        const dbHost = dbUrl.hostname;
+        const dbPort = dbUrl.port || '5432';
+        
+        // Check if we're using Windows or Unix-like system
+        const isWindows = process.platform === 'win32';
+        
+        let restoreCommand = '';
+        
+        if (isWindows) {
+          // Windows command
+          restoreCommand = `set PGPASSWORD=${dbPassword} && psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} -f "${backupFile}"`;
+        } else {
+          // Unix command
+          restoreCommand = `PGPASSWORD=${dbPassword} psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} -f "${backupFile}"`;
+        }
+        
+        console.log("Executing restore command:", restoreCommand);
+        const { execSync } = require('child_process');
+        
+        try {
+          execSync(restoreCommand);
+          console.log("Database restored successfully");
+        } catch (err) {
+          console.error("Error executing restore command:", err);
+          throw new Error("Failed to execute restore command");
+        }
+      }
+      
+      // Clear cache after restore
+      clearCache();
+      
+      res.status(200).json({ 
+        success: true, 
+        message: "Database restored successfully",
+        restored: {
+          data: restoreData,
+          templates: restoreTemplates
+        }
+      });
+    } catch (error) {
+      console.error("Error restoring database:", error);
+      res.status(500).json({ message: `Error restoring database: ${error.message}` });
+    }
+  });
+
+  // Reports route
+  app.get("/api/reports", async (req, res) => {
+    try {
+      const { type, startDate, endDate } = req.query;
+      
+      console.log(`Generating report: type=${type}, startDate=${startDate}, endDate=${endDate}`);
+      console.log(`DEBUG - Report API - Using mock data: ${dbUsingMockData}`);
+      
+      if (!type) {
+        return res.status(400).json({ message: "Report type is required" });
+      }
+      
+      let reportData: any[] = [];
+      
+      // Validate date parameters
+      let validStartDate: Date | undefined;
+      let validEndDate: Date | undefined;
+      
+      if (startDate && typeof startDate === 'string') {
+        try {
+          validStartDate = new Date(startDate);
+          if (isNaN(validStartDate.getTime())) {
+            return res.status(400).json({ message: "Invalid start date format" });
+          }
+        } catch (error) {
+          console.error("Error parsing start date:", error);
+          return res.status(400).json({ message: "Invalid start date format" });
+        }
+      }
+      
+      if (endDate && typeof endDate === 'string') {
+        try {
+          validEndDate = new Date(endDate);
+          if (isNaN(validEndDate.getTime())) {
+            return res.status(400).json({ message: "Invalid end date format" });
+          }
+        } catch (error) {
+          console.error("Error parsing end date:", error);
+          return res.status(400).json({ message: "Invalid end date format" });
+        }
+      }
+      
+      // Use mock data if configured
+      if (dbUsingMockData) {
+        console.log(`Using mock data for ${type} report`);
+        // Generate sample data based on report type
+        switch (type) {
+          case 'sales':
+            reportData = generateSampleSalesData();
+            break;
+          case 'purchases':
+            reportData = generateSamplePurchasesData();
+            break;
+          case 'inventory':
+            reportData = generateSampleInventoryData();
+            break;
+          case 'customers':
+            reportData = generateSampleCustomersData();
+            break;
+          case 'suppliers':
+            reportData = generateSampleSuppliersData();
+            break;
+          default:
+            return res.status(400).json({ message: "Invalid report type" });
+        }
+      } else {
+        console.log(`Fetching real data for ${type} report`);
+        // Fetch real data from database based on report type
+        switch (type) {
+          case 'sales':
+            // Fetch real sales data
+            const salesData = await storage.listInvoices(undefined, validStartDate, validEndDate);
+            // Filter sales invoices and fetch account info for each
+            const salesWithAccounts = await Promise.all(
+              salesData.filter(invoice => invoice.invoiceNumber.startsWith('INV-'))
+                .map(async (invoice) => {
+                  let accountName = '';
+                  // Get account details if available
+                  if (invoice.accountId) {
+                    try {
+                      const account = await storage.getAccount(invoice.accountId);
+                      if (account) {
+                        accountName = account.name;
+                      }
+                    } catch (err) {
+                      console.error('Error fetching account details for invoice:', err);
+                    }
+                  }
+                  return {
+                    invoiceNumber: invoice.invoiceNumber,
+                    date: invoice.date,
+                    accountName: accountName,
+                    total: invoice.total,
+                    status: invoice.status
+                  };
+                })
+            );
+            reportData = salesWithAccounts;
+            break;
+          case 'purchases':
+            try {
+              // Fetch real purchases data using the listPurchases method
+              const purchasesData = await storage.listPurchases(undefined, validStartDate, validEndDate);
+              
+              // If no purchases are found, try to find them using invoices with PUR prefix
+              if (purchasesData.length === 0) {
+                console.log('No purchases found using listPurchases, falling back to alternative method');
+                const allInvoices = await storage.listInvoices(undefined, validStartDate, validEndDate);
+                const purchaseInvoices = allInvoices.filter(inv => inv.invoiceNumber.startsWith('PUR-'));
+                
+                // Map and add account names
+                reportData = await Promise.all(
+                  purchaseInvoices.map(async (invoice) => {
+                    let accountName = '';
+                    // Get account details if available
+                    if (invoice.accountId) {
+                      try {
+                        const account = await storage.getAccount(invoice.accountId);
+                        if (account) {
+                          accountName = account.name;
+                        }
+                      } catch (err) {
+                        console.error('Error fetching account details for purchase:', err);
+                      }
+                    }
+                    return {
+                      invoiceNumber: invoice.invoiceNumber,
+                      date: invoice.date,
+                      accountName: accountName,
+                      total: invoice.total,
+                      status: invoice.status
+                    };
+                  })
+                );
+              } else {
+                // Map purchase data with account names
+                reportData = await Promise.all(
+                  purchasesData.map(async (purchase) => {
+                    let accountName = '';
+                    // Get account details if available
+                    if (purchase.accountId) {
+                      try {
+                        const account = await storage.getAccount(purchase.accountId);
+                        if (account) {
+                          accountName = account.name;
+                        }
+                      } catch (err) {
+                        console.error('Error fetching account details for purchase:', err);
+                      }
+                    }
+                    return {
+                      invoiceNumber: purchase.purchaseNumber,
+                      date: purchase.date,
+                      accountName: accountName,
+                      total: purchase.total,
+                      status: purchase.status
+                    };
+                  })
+                );
+              }
+            } catch (error) {
+              console.error("Error fetching purchases:", error);
+              // Fallback - search for purchases in invoices
+              const allInvoices = await storage.listInvoices(undefined, validStartDate, validEndDate);
+              const purchaseInvoices = allInvoices.filter(inv => inv.invoiceNumber.startsWith('PUR-'));
+              
+              reportData = await Promise.all(
+                purchaseInvoices.map(async (invoice) => {
+                  let accountName = '';
+                  // Get account details if available
+                  if (invoice.accountId) {
+                    try {
+                      const account = await storage.getAccount(invoice.accountId);
+                      if (account) {
+                        accountName = account.name;
+                      }
+                    } catch (err) {
+                      console.error('Error fetching account details for purchase:', err);
+                    }
+                  }
+                  return {
+                    invoiceNumber: invoice.invoiceNumber,
+                    date: invoice.date,
+                    accountName: accountName,
+                    total: invoice.total,
+                    status: invoice.status
+                  };
+                })
+              );
+            }
+            break;
+          case 'inventory':
+            // Fetch real inventory data
+            const inventoryData = await storage.listInventory();
+            // Get product details for each inventory item
+            const products = await storage.listProducts();
+            
+            reportData = inventoryData.map(item => {
+              const product = products.find(p => p.id === item.productId);
+              return {
+                id: item.productId,
+                name: product?.name || 'غير معروف',
+                quantity: item.quantity,
+                costPrice: product?.costPrice || 0,
+                sellPrice1: product?.sellPrice1 || 0,
+                totalValue: (item.quantity || 0) * (product?.costPrice || 0)
+              };
+            });
+            break;
+          case 'customers':
+            // Fetch real customers data
+            const customersData = await storage.listAccounts('customer');
+            reportData = await Promise.all(customersData.map(async customer => {
+              // Get invoices for this customer
+              const invoices = await storage.listInvoices(customer.id);
+              const customerInvoices = invoices.filter(inv => inv.invoiceNumber.startsWith('INV-'));
+              // Calculate total sales
+              const totalSales = customerInvoices.reduce((sum, inv) => sum + inv.total, 0);
+              // Get latest transaction date
+              const latestInvoice = customerInvoices.sort((a, b) => 
+                new Date(b.date).getTime() - new Date(a.date).getTime()
+              )[0];
+              
+              return {
+                id: customer.id,
+                name: customer.name,
+                invoiceCount: customerInvoices.length,
+                totalSales: totalSales,
+                lastTransaction: latestInvoice?.date
+              };
+            }));
+            break;
+          case 'suppliers':
+            // Fetch real suppliers data
+            const suppliersData = await storage.listAccounts('supplier');
+            reportData = await Promise.all(suppliersData.map(async supplier => {
+              try {
+                // First try to get purchases using the regular method
+                let purchases = await storage.listPurchases(supplier.id);
+                
+                // If no purchases are found, look for invoices with PUR prefix
+                if (purchases.length === 0) {
+                  console.log(`No purchases found using listPurchases for supplier ${supplier.id}, checking invoices`);
+                  const allInvoices = await storage.listInvoices(supplier.id);
+                  purchases = allInvoices.filter(inv => inv.invoiceNumber.startsWith('PUR-'));
+                }
+                
+                // Calculate total purchases
+                const totalPurchases = purchases.reduce((sum, inv) => sum + inv.total, 0);
+                
+                // Get latest transaction date
+                const latestPurchase = purchases.length > 0 ? 
+                  purchases.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] : null;
+                
+                return {
+                  id: supplier.id,
+                  name: supplier.name,
+                  invoiceCount: purchases.length,
+                  totalPurchases: totalPurchases,
+                  lastTransaction: latestPurchase?.date
+                };
+              } catch (error) {
+                console.error(`Error processing supplier ${supplier.id}:`, error);
+                return {
+                  id: supplier.id,
+                  name: supplier.name,
+                  invoiceCount: 0,
+                  totalPurchases: 0,
+                  lastTransaction: null
+                };
+              }
+            }));
+            break;
+          default:
+            return res.status(400).json({ message: "Invalid report type" });
+        }
+      }
+      
+      console.log(`Generated ${reportData.length} records for ${type} report`);
+      
+      return res.status(200).json(reportData);
+    } catch (error) {
+      console.error("Error generating report:", error);
+      return res.status(500).json({ message: "Error generating report: " + (error instanceof Error ? error.message : "Unknown error") });
+    }
+  });
+  
+  // Financial Reports route
+  app.get("/api/finance/reports", async (req, res) => {
+    try {
+      const { type, startDate, endDate } = req.query;
+      
+      if (!type) {
+        return res.status(400).json({ message: "Report type is required" });
+      }
+      
+      let reportData: any = {};
+      
+      // Generate sample data based on report type
+      switch (type) {
+        case 'income':
+          reportData = generateIncomeStatementData();
+          break;
+        case 'balance':
+          reportData = generateBalanceSheetData();
+          break;
+        case 'cashflow':
+          reportData = generateCashFlowData();
+          break;
+        case 'accounts':
+          reportData = generateAccountsStatementData();
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid financial report type" });
+      }
+      
+      // In a real implementation, we would filter the data based on start and end dates
+      // and retrieve the data from the database
+      
+      res.status(200).json(reportData);
+    } catch (error) {
+      console.error("Error generating financial report:", error);
+      res.status(500).json({ message: "Error generating financial report" });
+    }
+  });
+
+  // Account Statement API
+  app.get("/api/accounts/:id/statement", async (req, res) => {
+    try {
+      const accountId = parseInt(req.params.id);
+      if (isNaN(accountId)) {
+        return res.status(400).json({ message: "Invalid account ID" });
+      }
+
+      const { startDate, endDate } = req.query;
+      let parsedStartDate: Date | undefined;
+      let parsedEndDate: Date | undefined;
+
+      if (startDate && typeof startDate === 'string') {
+        parsedStartDate = new Date(startDate);
+        if (isNaN(parsedStartDate.getTime())) {
+          return res.status(400).json({ message: "Invalid start date format" });
+        }
+      }
+
+      if (endDate && typeof endDate === 'string') {
+        parsedEndDate = new Date(endDate);
+        if (isNaN(parsedEndDate.getTime())) {
+          return res.status(400).json({ message: "Invalid end date format" });
+        }
+      }
+
+      // Use mock data if configured
+      if (dbUsingMockData) {
+        console.log('USING MOCK DATA for account statement');
+        const mockStatement = generateAccountsStatementData();
+        mockStatement.account.id = accountId;
+        
+        // Try to find a real account name if available
+        const account = mockDB.getAccount(accountId);
+        if (account) {
+          mockStatement.account.name = account.name;
+          mockStatement.account.type = account.type;
+        }
+        
+        return res.json(mockStatement);
+      }
+
+      // Get account statement from database
+      const statement = await storage.getAccountStatement(accountId, parsedStartDate, parsedEndDate);
+      res.json(statement);
+    } catch (error) {
+      console.error("Error generating account statement:", error);
+      res.status(500).json({ message: "Error generating account statement" });
+    }
+  });
+
+  // Account Last Transactions API
+  app.get("/api/accounts/:id/last-transactions", async (req, res) => {
+    try {
+      const accountId = parseInt(req.params.id);
+      if (isNaN(accountId)) {
+        return res.status(400).json({ message: "Invalid account ID" });
+      }
+
+      // Use mock data if configured
+      if (dbUsingMockData) {
+        console.log('USING MOCK DATA for account last transactions');
+        
+        // Try to find a real account
+        const account = mockDB.getAccount(accountId);
+        if (!account) {
+          return res.status(404).json({ message: "Account not found" });
+        }
+        
+        // Generate mock last transactions
+        const mockData = {
+          lastTransaction: {
+            id: 12345,
+            accountId: accountId,
+            type: account.type === 'customer' ? 'credit' : 'debit',
+            amount: Math.floor(Math.random() * 10000) / 100,
+            date: new Date().toISOString(),
+            reference: account.type === 'customer' ? 'INV-1234' : 'PUR-1234'
+          },
+          lastInvoice: {
+            id: 54321,
+            accountId: accountId,
+            invoiceNumber: account.type === 'customer' ? 'INV-1234' : 'PUR-1234',
+            date: new Date().toISOString(),
+            total: Math.floor(Math.random() * 10000) / 100,
+            status: 'posted'
+          }
+        };
+        
+        return res.json(mockData);
+      }
+
+      // Get last transactions from database
+      const lastTransactions = await storage.getAccountLastTransactions(accountId);
+      res.json(lastTransactions);
+    } catch (error) {
+      console.error("Error getting account last transactions:", error);
+      res.status(500).json({ message: "Error getting account last transactions" });
+    }
+  });
+
+  // Endpoint to get latest backup file
+  app.get("/api/backup/latest", (req, res) => {
+    try {
+      // Check common backup directories
+      const possibleBackupDirs = [
+        "D:\\SaHL-Backups",
+        "D:\\newSaHL-Backups",
+        path.join(process.cwd(), 'backups')
+      ];
+      
+      let latestBackup = null;
+      let latestTime = 0;
+      
+      // Scan each directory for backup files
+      for (const dir of possibleBackupDirs) {
+        if (fs.existsSync(dir)) {
+          const files = fs.readdirSync(dir);
+          
+          // Look for SQL or JSON backup files
+          const backupFiles = files.filter(file => 
+            file.endsWith('.sql') || file.endsWith('.json') && file.includes('backup')
+          );
+          
+          for (const file of backupFiles) {
+            const filePath = path.join(dir, file);
+            const stats = fs.statSync(filePath);
+            
+            if (stats.isFile() && stats.mtimeMs > latestTime) {
+              latestTime = stats.mtimeMs;
+              latestBackup = filePath;
+            }
+          }
+        }
+      }
+      
+      if (latestBackup) {
+        console.log(`Found latest backup file: ${latestBackup}`);
+        res.status(200).json({ backupFile: latestBackup });
+      } else {
+        console.log("No backup files found in common directories");
+        res.status(200).json({ backupFile: null });
+      }
+    } catch (error) {
+      console.error("Error finding latest backup:", error);
+      res.status(500).json({ message: "Error finding latest backup file" });
+    }
+  });
+
+  // Endpoint to open a folder in File Explorer
+  app.post("/api/backup/open-folder", (req, res) => {
+    try {
+      const { folderPath } = req.body;
+      
+      if (!folderPath) {
+        return res.status(400).json({ success: false, message: "Folder path is required" });
+      }
+      
+      // Check if the directory exists
+      if (!fs.existsSync(folderPath)) {
+        console.error(`Directory not found: ${folderPath}`);
+        
+        // Try to create the directory if it doesn't exist
+        try {
+          fs.mkdirSync(folderPath, { recursive: true });
+          console.log(`Created backup directory: ${folderPath}`);
+        } catch (dirError) {
+          console.error(`Failed to create directory: ${dirError.message}`);
+          return res.status(404).json({ success: false, message: "Backup directory not found and could not be created" });
+        }
+      }
+      
+      console.log(`Opening folder: ${folderPath}`);
+      
+      // Use the 'open' module to open the folder in File Explorer
+      // This is cross-platform and will work on Windows, macOS, and Linux
+      const { exec } = require('child_process');
+      
+      if (process.platform === 'win32') {
+        // For Windows
+        exec(`explorer "${folderPath}"`);
+      } else if (process.platform === 'darwin') {
+        // For macOS
+        exec(`open "${folderPath}"`);
+      } else {
+        // For Linux
+        exec(`xdg-open "${folderPath}"`);
+      }
+      
+      res.status(200).json({ success: true, message: "Folder opened successfully" });
+    } catch (error) {
+      console.error("Error opening folder:", error);
+      res.status(500).json({ success: false, message: `Error opening folder: ${error.message}` });
+    }
+  });
+
+  // Database reset endpoint
+  app.post("/api/database/reset", async (req, res) => {
+    try {
+      const { password } = req.body;
+      
+      // Verify password
+      if (password !== "admin") {
+        return res.status(401).json({ success: false, message: "كلمة المرور غير صحيحة" });
+      }
+      
+      console.log("Resetting database - password verified");
+      
+      // Create a backup before resetting (safety measure)
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const backupDir = path.join(process.cwd(), 'backups', 'pre-reset');
+      const backupFileName = `pre_reset_backup_${timestamp}.sql`;
+      const backupFilePath = path.join(backupDir, backupFileName);
+      
+      // Ensure backup directory exists
+      fs.mkdirSync(backupDir, { recursive: true });
+      
+      // Different reset approaches based on real vs mock DB
+      if (usingMockData) {
+        console.log("Resetting mock database");
+        
+        try {
+          // Create a backup of current mock data
+          const mockDataBackupPath = path.join(backupDir, `mock_data_backup_${timestamp}.json`);
+          fs.writeFileSync(mockDataBackupPath, JSON.stringify(mockData, null, 2));
+          
+          // Reset mock data to empty objects
+          mockData = {
+            accounts: [],
+            categories: [],
+            products: [],
+            warehouses: [],
+            inventory: [],
+            transactions: [],
+            inventoryTransactions: [],
+            invoices: [],
+            invoiceDetails: [],
+            purchases: [],
+            purchaseDetails: [],
+            users: [],
+            settings: []
+          };
+          
+          // Save the reset mock data to file
+          fs.writeFileSync(path.join(process.cwd(), 'mock-data.json'), JSON.stringify(mockData, null, 2));
+          
+          console.log("Mock database reset successful");
+        } catch (err) {
+          console.error("Error resetting mock database:", err);
+          throw new Error("Failed to reset mock database");
+        }
+      } else {
+        // Real PostgreSQL database reset
+        console.log("Attempting to reset real PostgreSQL database");
+        
+        try {
+          // Backup first
+          console.log("Creating backup before reset");
+          
+          // Extract connection details from DATABASE_URL
+          const dbUrl = new URL(config.DATABASE_URL);
+          const dbName = dbUrl.pathname.substring(1);
+          const dbUser = dbUrl.username;
+          const dbPassword = dbUrl.password;
+          const dbHost = dbUrl.hostname;
+          const dbPort = dbUrl.port || '5432';
+          
+          // Create backup command
+          const isWindows = process.platform === 'win32';
+          let backupCommand = '';
+          
+          if (isWindows) {
+            backupCommand = `set PGPASSWORD=${dbPassword} && pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -F p -b -v -f "${backupFilePath}" ${dbName}`;
+          } else {
+            backupCommand = `PGPASSWORD=${dbPassword} pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -F p -b -v -f "${backupFilePath}" ${dbName}`;
+          }
+          
+          // Execute backup command
+          const { execSync } = require('child_process');
+          execSync(backupCommand);
+          console.log(`Backup before reset created at: ${backupFilePath}`);
+          
+          // Connect to the database directly to truncate all tables
+          const { Client } = require('pg');
+          const client = new Client({
+            connectionString: config.DATABASE_URL
+          });
+          
+          await client.connect();
+          console.log("Connected to database for reset");
+          
+          // Start a transaction
+          await client.query('BEGIN');
+          
+          try {
+            // Disable foreign key constraints
+            await client.query('SET session_replication_role = replica;');
+            
+            // Get all tables in the public schema
+            const tablesResult = await client.query(`
+              SELECT table_name 
+              FROM information_schema.tables 
+              WHERE table_schema = 'public'
+              AND table_type = 'BASE TABLE'
+            `);
+            
+            // Truncate each table
+            for (const row of tablesResult.rows) {
+              const tableName = row.table_name;
+              console.log(`Truncating table: ${tableName}`);
+              await client.query(`TRUNCATE TABLE "${tableName}" CASCADE`);
+            }
+            
+            // Re-enable foreign key constraints
+            await client.query('SET session_replication_role = DEFAULT;');
+            
+            // Commit the transaction
+            await client.query('COMMIT');
+            console.log("Database tables truncated successfully");
+            
+            // Optionally, initialize with default data
+            // This will create at least one default warehouse and settings
+            
+            // Create default warehouse if needed
+            await client.query(`
+              INSERT INTO warehouses (name, is_default, is_active)
+              VALUES ('المخزن الرئيسي', true, true)
+              ON CONFLICT DO NOTHING
+            `);
+            
+            // Create default settings if needed
+            await client.query(`
+              INSERT INTO settings (company_name, currency, currency_symbol)
+              VALUES ('شركة الريادي لتوزيع المواد الغذائية', 'EGP', 'ج.م')
+              ON CONFLICT DO NOTHING
+            `);
+            
+          } catch (dbError) {
+            // Rollback in case of error
+            await client.query('ROLLBACK');
+            console.error("Error during database reset:", dbError);
+            throw new Error(`Database reset failed: ${dbError.message}`);
+          } finally {
+            // Close the client connection
+            await client.end();
+            console.log("Database connection closed");
+          }
+        } catch (pgError) {
+          console.error("PostgreSQL reset error:", pgError);
+          throw new Error(`PostgreSQL reset failed: ${pgError.message}`);
+        }
+      }
+      
+      // Clear cache
+      clearCache();
+      
+      // Return success
+      res.status(200).json({ 
+        success: true, 
+        message: "Database reset successful",
+        backupFile: backupFilePath 
+      });
+    } catch (error) {
+      console.error("Error resetting database:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: `Error resetting database: ${error.message}` 
+      });
     }
   });
 

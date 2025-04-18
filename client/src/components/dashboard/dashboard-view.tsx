@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { useAppContext } from "@/context/app-context";
 import { Button } from "@/components/ui/button";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Package,
   Users,
@@ -17,7 +18,8 @@ import {
   BookOpen,
   Settings,
   Database,
-  TrendingUp
+  TrendingUp,
+  Download
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
@@ -52,6 +54,8 @@ interface StatsData {
 // Simple dashboard with direct API queries but with proper caching
 export default function DashboardView() {
   const { companyName } = useAppContext();
+  const [, navigate] = useLocation();
+  const [lastBackupFile, setLastBackupFile] = useState<string | null>(null);
 
   // Get system stats
   const statsQuery = useQuery({
@@ -136,9 +140,40 @@ export default function DashboardView() {
     { title: "بيع", icon: Tag, path: "/sales/new", color: "bg-emerald-600" }
   ];
 
+  // Function to check for latest backup file
+  useEffect(() => {
+    const checkLatestBackup = async () => {
+      try {
+        const response = await fetch('/api/backup/latest');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.backupFile) {
+            setLastBackupFile(data.backupFile);
+          }
+        }
+      } catch (error) {
+        console.error("Error checking latest backup:", error);
+      }
+    };
+    
+    checkLatestBackup();
+  }, []);
+
   // Function to handle backup creation
   const handleBackup = () => {
-    alert("تم عمل نسخة احتياطية بنجاح");
+    // Navigate to backup page
+    navigate('/backup');
+  };
+
+  // Function to download backup
+  const handleDownloadBackup = () => {
+    if (!lastBackupFile) return;
+    
+    // Create the download URL
+    const downloadUrl = `/api/backup/download?filePath=${encodeURIComponent(lastBackupFile)}`;
+    
+    // Open the URL in a new window/tab
+    window.open(downloadUrl, '_blank');
   };
 
   // Stats cards
@@ -369,13 +404,26 @@ export default function DashboardView() {
         <div className="bg-white rounded-lg shadow mb-8 p-4 border-r-4 border-amber-500 max-w-md mx-auto">
           <h4 className="font-bold text-gray-800 mb-2">نسخة احتياطية</h4>
           <p className="text-sm text-gray-600 mb-3">يجب عمل نسخة احتياطية بشكل دوري لضمان سلامة بياناتك</p>
-          <Button 
-            className="w-full bg-amber-500 hover:bg-amber-600 text-white"
-            onClick={handleBackup}
-          >
-            <Database className="h-4 w-4 ml-2" />
-            عمل نسخة الآن
-          </Button>
+          
+          <div className="space-y-2">
+            <Button 
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+              onClick={handleBackup}
+            >
+              <Database className="h-4 w-4 ml-2" />
+              عمل نسخة الآن
+            </Button>
+            
+            {lastBackupFile && (
+              <Button 
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={handleDownloadBackup}
+              >
+                <Download className="h-4 w-4 ml-2" />
+                تحميل آخر نسخة احتياطية
+              </Button>
+            )}
+          </div>
         </div>
         
         {/* Reports Section */}
